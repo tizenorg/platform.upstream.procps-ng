@@ -8,6 +8,7 @@ Summary:        System and process monitoring utilities
 Url:            https://sourceforge.net/projects/procps-ng/
 Group:          System/Base
 Source:         http://downloads.sourceforge.net/%{name}/%{name}-%{version}.tar.xz
+Source1001: 	procps-ng.manifest
 
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
@@ -61,6 +62,7 @@ System and process monitoring utilities development headers
 
 %prep
 %setup -q
+cp %{SOURCE1001} .
 
 %build
 %reconfigure
@@ -101,6 +103,7 @@ rm -rf %{buildroot}/unwanted
 %docs_package
 
 %files
+%manifest %{name}.manifest
 %license COPYING COPYING.LIB
 %{_libdir}/libprocps.so.*
 %{_bindir}/*
@@ -110,6 +113,7 @@ rm -rf %{buildroot}/unwanted
 %exclude %{_sysconfdir}/sysctl.conf
 
 %files devel
+%manifest %{name}.manifest
 %{_libdir}/libprocps.so
 %{_includedir}/proc
 %{_libdir}/pkgconfig/libprocps.pc
