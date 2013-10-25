@@ -6,7 +6,7 @@ Release:        1
 License:        GPL-2.0 and LGPL-2.0+
 Summary:        System and process monitoring utilities
 Url:            https://sourceforge.net/projects/procps-ng/
-Group:          System/Base
+Group:          Base/Utilities
 Source:         http://downloads.sourceforge.net/%{name}/%{name}-%{version}.tar.xz
 Source1001: 	procps-ng.manifest
 
