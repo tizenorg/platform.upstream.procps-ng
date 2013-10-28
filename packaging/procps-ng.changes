@@ -1,3 +1,7 @@
+* Fri Oct 25 2013 Aleksander Zdyb <a.zdyb@partner.samsung.com> accepted/tizen/20130913.024110@348be71
+- Fixed group (Aleksander Zdyb <a.zdyb@partner.samsung.com>)
+- resetting manifest requested domain to floor (Alexandru Cornea <alexandru.cornea@intel.com>)
+
 * Sat Mar 30 2013 Anas Nashif <anas.nashif@intel.com> upstream/3.3.7@c48817a
 - Replace old procps
 
