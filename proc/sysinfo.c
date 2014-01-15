@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -105,6 +106,7 @@ int uptime(double *restrict uptime_secs, double *restrict idle_secs) {
 
 unsigned long getbtime(void) {
     static unsigned long btime = 0;
+    bool found_btime = false;
     FILE *f;
 
     if (btime)
@@ -119,12 +121,14 @@ unsigned long getbtime(void) {
     }
 
     while ((fgets(buf, sizeof buf, f))) {
-        if (sscanf(buf, "btime %lu", &btime) == 1)
+        if (sscanf(buf, "btime %lu", &btime) == 1) {
+            found_btime = true;
             break;
+        }
     }
     fclose(f);
 
-    if (!btime) {
+    if (!found_btime) {
 	fputs("missing btime in " STAT_FILE "\n", stderr);
 	exit(1);
     }
@@ -312,7 +316,7 @@ void eight_cpu_numbers(double *restrict uret, double *restrict nret, double *res
     new_y = 0;
     tmp_z = 0.0;
     new_z = 0;
- 
+
     FILE_TO_BUF(STAT_FILE,stat_fd);
     sscanf(buf, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &new_u, &new_n, &new_s, &new_i, &new_w, &new_x, &new_y, &new_z);
     ticks_past = (new_u+new_n+new_s+new_i+new_w+new_x+new_y+new_z)-(old_u+old_n+old_s+old_i+old_w+old_x+old_y+old_z);
@@ -360,7 +364,7 @@ void eight_cpu_numbers(double *restrict uret, double *restrict nret, double *res
 void loadavg(double *restrict av1, double *restrict av5, double *restrict av15) {
     double avg_1=0, avg_5=0, avg_15=0;
     char *savelocale;
- 
+
     FILE_TO_BUF(LOADAVG_FILE,loadavg_fd);
     savelocale = strdup(setlocale(LC_NUMERIC, NULL));
     setlocale(LC_NUMERIC, "C");
@@ -490,7 +494,8 @@ void getstat(jiff *restrict cuse, jiff *restrict cice, jiff *restrict csys, jiff
     getrunners(running, blocked);
   }
 
-  (*running)--;   // exclude vmstat itself
+  if(*running)
+    (*running)--;   // exclude vmstat itself
 
   if(need_vmstat_file){  /* Linux 2.5.40-bk4 and above */
     vminfo();
@@ -544,6 +549,7 @@ static int compare_mem_table_structs(const void *a, const void *b){
  * Dirty:               0 kB    2.5.41+
  * Writeback:           0 kB    2.5.41+
  * Mapped:           9792 kB    2.5.41+
+ * Shmem:              28 kB    2.6.32+
  * Slab:             4564 kB    2.5.41+
  * Committed_AS:     8440 kB    2.5.41+
  * PageTables:        304 kB    2.5.41+
@@ -554,7 +560,7 @@ static int compare_mem_table_structs(const void *a, const void *b){
  * Hugepagesize:     4096 kB    2.5.??+
  */
 
-/* obsolete */
+/* obsolete since 2.6.x, but reused for shmem in 2.6.32+ */
 unsigned long kb_main_shared;
 /* old but still kicking -- the important stuff */
 unsigned long kb_main_buffers;
@@ -625,13 +631,14 @@ void meminfo(void){
   {"LowTotal",     &kb_low_total},
   {"Mapped",       &kb_mapped},       // kB version of vmstat nr_mapped
   {"MemFree",      &kb_main_free},    // important
-  {"MemShared",    &kb_main_shared},  // important, but now gone!
+  {"MemShared",    &kb_main_shared},  // obsolete since kernel 2.6! (sharing the variable with Shmem replacement)
   {"MemTotal",     &kb_main_total},   // important
   {"NFS_Unstable", &kb_nfs_unstable},
   {"PageTables",   &kb_pagetables},   // kB version of vmstat nr_page_table_pages
   {"ReverseMaps",  &nr_reversemaps},  // same as vmstat nr_page_table_pages
   {"SReclaimable", &kb_swap_reclaimable}, // "swap reclaimable" (dentry and inode structures)
   {"SUnreclaim",   &kb_swap_unreclaimable},
+  {"Shmem",        &kb_main_shared},  // kernel 2.6 and later (sharing the output variable with obsolete MemShared)
   {"Slab",         &kb_slab},         // kB version of vmstat nr_slab
   {"SwapCached",   &kb_swap_cached},
   {"SwapFree",     &kb_swap_free},    // important

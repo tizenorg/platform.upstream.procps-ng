@@ -23,6 +23,9 @@
 #include "../proc/readproc.h"
 
         /* Defines represented in configure.ac ----------------------------- */
+//#define BOOST_PERCNT            /* enable extra precision for two % fields */
+//#define NOBOOST_MEMS            /* disable extra precision for mem fields  */
+//#define NUMA_DISABLE            /* disable summary area NUMA/Nodes display */
 //#define OOMEM_ENABLE            /* enable the SuSE out-of-memory additions */
 //#define SIGNALS_LESS            /* favor reduced signal load over response */
 
@@ -37,13 +40,13 @@
 //#define INSP_OFFDEMO            /* disable demo screens, issue msg instead */
 //#define INSP_SAVEBUF            /* preserve 'Insp_buf' contents in a file  */
 //#define INSP_SLIDE_1            /* when scrolling left/right don't move 8  */
-//#define NOBOOST_MEMS            /* disable extra precision for mem fields  */
-//#define NOBOOST_PCNT            /* disable extra precision for % fields    */
 //#define OFF_HST_HASH            /* use BOTH qsort+bsrch vs. hashing scheme */
+//#define OFF_SCROLLBK            /* disable tty emulators scrollback buffer */
 //#define OFF_STDIOLBF            /* disable our own stdout _IOFBF override  */
 //#define PRETEND2_5_X            /* pretend we're linux 2.5.x (for IO-wait) */
-//#define PRETEND4CPUS            /* pretend we're smp with 4 ticsers (sic)  */
+//#define PRETEND8CPUS            /* pretend we're smp with 8 ticsers (sic)  */
 //#define PRETENDNOCAP            /* use a terminal without essential caps   */
+//#define PRETEND_NUMA            /* pretend we've got some linux NUMA Nodes */
 //#define RCFILE_NOERR            /* rcfile errs silently default, vs. fatal */
 //#define RECALL_FIXED            /* don't reorder saved strings if recalled */
 //#define RMAN_IGNORED            /* don't consider auto right margin glitch */
@@ -75,6 +78,9 @@
         /* For initiating the topic of potential % CPU distortions due to
            to kernel and/or cpu anomalies (see CPU_ZEROTICS), thanks to:
               Jaromir Capik, <jcapik@redhat.com> - February, 2012 */
+
+        /* For the impetus and NUMA/Node prototype design, thanks to:
+              Lance Shelton <LShelton@fusionio.com> - April, 2013 */
 
 #ifdef PRETEND2_5_X
 #define linux_version_code LINUX_VERSION(2,5,43)
@@ -117,7 +123,7 @@ char *strcasestr(const char *haystack, const char *needle);
       -- so SCREENMAX provides for all fields plus a 250+ byte command line */
 #define CAPBUFSIZ    32
 #define CLRBUFSIZ    64
-#define PFLAGSSIZ    64
+#define PFLAGSSIZ    80
 #define SMLBUFSIZ   128
 #define MEDBUFSIZ   256
 #define LRGBUFSIZ   512
@@ -188,6 +194,7 @@ enum pflag {
    P_ENV,
    P_FV1, P_FV2,
    P_USE,
+   P_NS1, P_NS2, P_NS3, P_NS4, P_NS5, P_NS6,
 #ifdef USE_X_COLHDR
    // not really pflags, used with tbl indexing
    P_MAXPFLGS
@@ -202,9 +209,9 @@ enum scale_enum {
    SK_Kb, SK_Mb, SK_Gb, SK_Tb, SK_Pb, SK_Eb, SK_SENTINEL
 };
 
-        /* Used to manipulate (and document) the Frames_resize states */
+        /* Used to manipulate (and document) the Frames_signal states */
 enum resize_states {
-   RESIZ_clr, RESIZ_kbd, RESIZ_sig
+   BREAK_off = 0, BREAK_kbd, BREAK_sig
 };
 
         /* This typedef just ensures consistent 'process flags' handling */
@@ -271,6 +278,9 @@ typedef struct CPU_t {
    SIC_t edge;                    // tics adjustment threshold boundary
 #endif
    int id;                        // the cpu id number (0 - nn)
+#ifndef NUMA_DISABLE
+   int node;                      // the numa node it belongs to
+#endif
 } CPU_t;
 
         /* /////////////////////////////////////////////////////////////// */
@@ -287,6 +297,7 @@ typedef struct CPU_t {
            letter shown is the corresponding 'command' toggle */
         // 'View_' flags affect the summary (minimum), taken from 'Curwin'
 #define View_CPUSUM  0x008000     // '1' - show combined cpu stats (vs. each)
+#define View_CPUNOD  0x400000     // '2' - show numa node cpu stats ('3' also)
 #define View_LOADAV  0x004000     // 'l' - display load avg and uptime summary
 #define View_STATES  0x002000     // 't' - display task/cpu(s) states summary
 #define View_MEMORY  0x001000     // 'm' - display memory summary
@@ -554,22 +565,23 @@ typedef struct WIN_t {
         /* Configuration files support */
 #define SYS_RCFILESPEC  "/etc/toprc"
 #define RCF_EYECATCHER  "Config File (Linux processes with windows)\n"
-#define RCF_VERSION_ID  'g'
+#define RCF_VERSION_ID  'h'
+#define RCF_PLUS_H      "\\]^_`abcdefghij"
 
         /* The default fields displayed and their order, if nothing is
            specified by the loser, oops user.
            note: any *contiguous* ascii sequence can serve as fieldscur
                  characters as long as the initial value is coordinated
                  with that specified for FLD_OFFSET
-           ( we're providing for up to 55 fields initially, )
-           ( with values chosen to avoid the need to escape ) */
+           ( we're providing for up to 70 fields currently, )
+           ( with just one escaped value, the '\' character ) */
 #define FLD_OFFSET  '%'
-   //   seq_fields  "%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ["
-#define DEF_FIELDS  "¥¨³´»½ÀÄ·º¹Å&')*+,-./012568<>?ABCFGHIJKLMNOPQRSTUVWXYZ["
+   //   seq_fields  "%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghij"
+#define DEF_FIELDS  "¥¨³´»½ÀÄ·º¹Å&')*+,-./012568<>?ABCFGHIJKLMNOPQRSTUVWXYZ[" RCF_PLUS_H
         /* Pre-configured windows/field groups */
-#define JOB_FIELDS  "¥¦¹·º³´Ä»¼½§Å()*+,-./012568>?@ABCFGHIJKLMNOPQRSTUVWXYZ["
-#define MEM_FIELDS  "¥º»¼½¾¿ÀÁÃÄ³´·Å&'()*+,-./0125689BFGHIJKLMNOPQRSTUVWXYZ["
-#define USR_FIELDS  "¥¦§¨ª°¹·ºÄÅ)+,-./1234568;<=>?@ABCFGHIJKLMNOPQRSTUVWXYZ["
+#define JOB_FIELDS  "¥¦¹·º³´Ä»¼½§Å()*+,-./012568>?@ABCFGHIJKLMNOPQRSTUVWXYZ[" RCF_PLUS_H
+#define MEM_FIELDS  "¥º»¼½¾¿ÀÁÃÄ³´·Å&'()*+,-./0125689BFGHIJKLMNOPQRSTUVWXYZ[" RCF_PLUS_H
+#define USR_FIELDS  "¥¦§¨ª°¹·ºÄÅ)+,-./1234568;<=>?@ABCFGHIJKLMNOPQRSTUVWXYZ[" RCF_PLUS_H
 #ifdef OOMEM_ENABLE
         // the suse old top fields ( 'a'-'z' + '{|' ) in positions 0-27
         // ( the extra chars above represent the 'off' state )
@@ -613,6 +625,9 @@ typedef struct WIN_t {
 #if defined(RECALL_FIXED) && defined(TERMIOS_ONLY)
 # error 'RECALL_FIXED' conflicts with 'TERMIOS_ONLY'
 #endif
+#if defined(PRETEND_NUMA) && defined(NUMA_DISABLE)
+# error 'PRETEND_NUMA' confilcts with 'NUMA_DISABLE'
+#endif
 #if (LRGBUFSIZ < SCREENMAX)
 # error 'LRGBUFSIZ' must NOT be less than 'SCREENMAX'
 #endif
@@ -645,7 +660,6 @@ typedef struct WIN_t {
 //atic void          capsmk (WIN_t *q);
 //atic void          show_msg (const char *str);
 //atic int           show_pmt (const char *str);
-//atic inline void   show_scroll (void);
 //atic void          show_special (int interact, const char *glob);
 //atic void          updt_scroll_msg (void);
 /*------  Low Level Memory/Keyboard/File I/O support  --------------------*/

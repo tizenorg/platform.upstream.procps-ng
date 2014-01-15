@@ -1,3 +1,34 @@
+procps-ng-3.3.9
+---------------
+  * kernel namespaces support added to skill, pgrep, ps and top
+  * pidof was reimplemented from scratch (replacing sysvinit pidof)
+  * ps has configurable libselinux support (--enable-libselinux)
+  * ps provides for display of systemd slice unit (--with-systemd)
+  * free can once again report non-zero 'shared' memory
+  * sysctl provides '--system' to ignore missing /etc/sysctl.conf
+  * watch interval capacity was increased - debian #720445
+  * pwdx no longer fails in a nonexistent locale - debian #718766
+  * top clarified summary area Mem/Swap stats - debian #718670
+  * top batch mode -w (width) abend fixed - debian #721204
+  * top man page removed 'Bd/Ed' mdoc macros - debian #725713
+  * top no longer clears screen at exit - redhat #977561
+  * top adapted to potential libnuma stderr message - redhat #998678
+  * top added missing batch mode newline - redhat #1008674
+
+
+procps-ng-3.3.8
+---------------
+  * top adds extensions for linux NUMA/Node capability
+  * top has reverted to former %CPU and %MEM precision
+    but also provides a '--enable-wide-percent' option
+    Debian #707648
+  * eliminate the potential library segmentation fault
+    Debian #706259, RedHat #951391
+  * top now accomodates a window manager like 'screen'
+    RedHat #962022
+  * ps shows systemd unit and user unit for a process
+
+
 procps-ng-3.3.7
 ---------------
 

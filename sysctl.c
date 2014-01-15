@@ -105,24 +105,24 @@ static void __attribute__ ((__noreturn__))
 	      _(" %s [options] [variable[=value] ...]\n"),
 		program_invocation_short_name);
 	fputs(USAGE_OPTIONS, out);
-	fputs(_("  -a, --all            display all variables\n"
-		"  -A                   alias of -a\n"
-		"  -X                   alias of -a\n"
-		"      --deprecated     include deprecated parameters to listing\n"
-		"  -b, --binary         print value without new line\n"
-		"  -e, --ignore         ignore unknown variables errors\n"
-		"  -N, --names          print variable names without values\n"
-		"  -n, --values         print only values of a variables\n"
-		"  -p, --load[=<file>]  read values from file\n"
-		"  -f                   alias of -p\n"
-		"      --system         read values from all system directories\n"
-		"  -r, --pattern <expression>\n"
-		"                       select setting that match expression\n"
-		"  -q, --quiet          do not echo variable set\n"
-		"  -w, --write          enable writing a value to variable\n"
-		"  -o                   does nothing\n"
-		"  -x                   does nothing\n"
-		"  -d                   alias of -h\n"), out);
+	fputs(_("  -a, --all            display all variables\n"), out);
+	fputs(_("  -A                   alias of -a\n"), out);
+	fputs(_("  -X                   alias of -a\n"), out);
+	fputs(_("      --deprecated     include deprecated parameters to listing\n"), out);
+	fputs(_("  -b, --binary         print value without new line\n"), out);
+	fputs(_("  -e, --ignore         ignore unknown variables errors\n"), out);
+	fputs(_("  -N, --names          print variable names without values\n"), out);
+	fputs(_("  -n, --values         print only values of a variables\n"), out);
+	fputs(_("  -p, --load[=<file>]  read values from file\n"), out);
+	fputs(_("  -f                   alias of -p\n"), out);
+	fputs(_("      --system         read values from all system directories\n"), out);
+	fputs(_("  -r, --pattern <expression>\n"
+		"                       select setting that match expression\n"), out);
+	fputs(_("  -q, --quiet          do not echo variable set\n"), out);
+	fputs(_("  -w, --write          enable writing a value to variable\n"), out);
+	fputs(_("  -o                   does nothing\n"), out);
+	fputs(_("  -x                   does nothing\n"), out);
+	fputs(_("  -d                   alias of -h\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 	fputs(USAGE_HELP, out);
 	fputs(USAGE_VERSION, out);
@@ -578,6 +578,8 @@ static int PreloadSystem(void)
 	};
 	struct pair **cfgs = NULL;
 	unsigned ncfgs = 0;
+	int rc = 0;
+	struct stat ts;
 	enum { nprealloc = 16 };
 
 	for (di = 0; di < sizeof(dirs) / sizeof(dirs[0]); ++di) {
@@ -634,12 +636,16 @@ static int PreloadSystem(void)
 	for (i = 0; i < ncfgs; ++i) {
 		if (!Quiet)
 			printf(_("* Applying %s ...\n"), cfgs[i]->value);
-		Preload(cfgs[i]->value);
+		rc |= Preload(cfgs[i]->value);
 	}
 
-	if (!Quiet)
-		printf(_("* Applying %s ...\n"), DEFAULT_PRELOAD);
-	return Preload(DEFAULT_PRELOAD);
+
+	if (stat(DEFAULT_PRELOAD, &ts) < 0 && S_ISREG(ts.st_mode)) {
+		if (!Quiet)
+			printf(_("* Applying %s ...\n"), DEFAULT_PRELOAD);
+		rc |= Preload(DEFAULT_PRELOAD);
+	}
+	return rc;
 }
 
 /*
@@ -675,7 +681,9 @@ int main(int argc, char *argv[])
 		{NULL, 0, NULL, 0}
 	};
 
+#ifdef HAVE_PROGRAM_INVOCATION_NAME
 	program_invocation_name = program_invocation_short_name;
+#endif
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
@@ -764,15 +772,15 @@ int main(int argc, char *argv[])
 		int ret = EXIT_SUCCESS, i;
 		if (!preloadfile) {
 			if (!argc) {
-				ret != Preload(DEFAULT_PRELOAD);
+				ret |= Preload(DEFAULT_PRELOAD);
 			}
 		} else {
 			/* This happens when -pfile option is
 			 * used without space. */
-			Preload(preloadfile);
+			ret |= Preload(preloadfile);
 		}
 		for (i = 0; i < argc; i++)
-			Preload(argv[i]);
+			ret |= Preload(argv[i]);
 		return ret;
 	}
 

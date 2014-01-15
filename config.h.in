@@ -1,7 +1,13 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* provide extra precision under %CPU and %MEM for top */
+#undef BOOST_PERCNT
+
 /* should extra warnings be printed (slackware-ism) */
 #undef BUILD_WITH_WHINE
+
+/* Enable libselinux */
+#undef ENABLE_LIBSELINUX
 
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
@@ -9,6 +15,12 @@
 
 /* Define to 1 if you have the `alarm' function. */
 #undef HAVE_ALARM
+
+/* Define to 1 if you have the <arpa/inet.h> header file. */
+#undef HAVE_ARPA_INET_H
+
+/* Define to 1 if you have the `atexit' function. */
+#undef HAVE_ATEXIT
 
 /* Define to 1 if you have the <curses.h> header file. */
 #undef HAVE_CURSES_H
@@ -20,14 +32,17 @@
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
 
+/* Define to 1 if you have the `dup2' function. */
+#undef HAVE_DUP2
+
+/* Define to 1 if you have the <error.h> header file. */
+#undef HAVE_ERROR_H
+
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
 
 /* Define to 1 if you have the `fork' function. */
 #undef HAVE_FORK
-
-/* Define to 1 if you have the `getline' function. */
-#undef HAVE_GETLINE
 
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
@@ -93,6 +108,9 @@
 /* Define to 1 if you have the `nl_langinfo' function. */
 #undef HAVE_NL_LANGINFO
 
+/* Define if program_invocation_name is defined */
+#undef HAVE_PROGRAM_INVOCATION_NAME
+
 /* Define if program_invocation_short_name is defined */
 #undef HAVE_PROGRAM_INVOCATION_SHORT_NAME
 
@@ -115,11 +133,11 @@
 /* Define to 1 if you have the `setlocale' function. */
 #undef HAVE_SETLOCALE
 
-/* Define to 1 if stdbool.h conforms to C99. */
-#undef HAVE_STDBOOL_H
-
 /* Define to 1 if you have the <stdint.h> header file. */
 #undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdio_ext.h> header file. */
+#undef HAVE_STDIO_EXT_H
 
 /* Define to 1 if you have the <stdlib.h> header file. */
 #undef HAVE_STDLIB_H
@@ -165,6 +183,9 @@
 
 /* Define to 1 if you have the `strtoul' function. */
 #undef HAVE_STRTOUL
+
+/* Define to 1 if you have the `strtoull' function. */
+#undef HAVE_STRTOULL
 
 /* Define to 1 if `st_rdev' is a member of `struct stat'. */
 #undef HAVE_STRUCT_STAT_ST_RDEV
@@ -235,6 +256,9 @@
 /* Define to 1 if the system has the type `_Bool'. */
 #undef HAVE__BOOL
 
+/* Define to 1 if you have the `__fpending' function. */
+#undef HAVE___FPENDING
+
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
 #undef LT_OBJDIR
@@ -247,8 +271,11 @@
    <sysmacros.h>. */
 #undef MAJOR_IN_SYSMACROS
 
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-#undef NO_MINUS_C_MINUS_O
+/* disable extra precision under memory fields for top */
+#undef NOBOOST_MEMS
+
+/* disable NUMA/Node support in top */
+#undef NUMA_DISABLE
 
 /* add out-of-memory fields to the library and top */
 #undef OOMEM_ENABLE
@@ -305,6 +332,9 @@
 /* Version number of package */
 #undef VERSION
 
+/* enable systemd support */
+#undef WITH_SYSTEMD
+
 /* Enable 8 bit clean watch */
 #undef WITH_WATCH8BIT
 
@@ -329,6 +359,10 @@
 #ifndef __cplusplus
 #undef inline
 #endif
+
+/* Define to the type of a signed integer type of width exactly 32 bits if
+   such a type exists and the standard includes do not define it. */
+#undef int32_t
 
 /* Define to rpl_malloc if the replacement function should be used. */
 #undef malloc

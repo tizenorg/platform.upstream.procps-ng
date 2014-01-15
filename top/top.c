@@ -26,6 +26,9 @@
 
 #include <ctype.h>
 #include <curses.h>
+#ifndef NUMA_DISABLE
+#include <dlfcn.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -56,6 +59,7 @@
 
 #include "top.h"
 #include "top_nls.h"
+
 
 /*######  Miscellaneous global stuff  ####################################*/
 
@@ -169,7 +173,7 @@ static WIN_t *Curwin;
            and/or that are simply more efficiently handled as globals
            [ 'Frames_...' (plural) stuff persists beyond 1 frame ]
            [ or are used in response to async signals received ! ] */
-static volatile int Frames_resize;     // time to rebuild all column headers
+static volatile int Frames_signal;     // time to rebuild all column headers
 static          int Frames_libflags;   // PROC_FILLxxx flags
 static int          Frame_maxtask;     // last known number of active tasks
                                        // ie. current 'size' of proc table
@@ -209,6 +213,22 @@ static int Autox_array [P_MAXPFLGS],
 #else                                                              // nls_maybe
    static char Scaled_sfxtab[] =  { 'k', 'm', 'g', 't', 'p', 'e', 0 };
 #endif
+
+        /* Support for NUMA Node display, node expansion/targeting and
+           run-time dynamic linking with libnuma.so treated as a plugin */
+static int Numa_node_tot;
+static int Numa_node_sel = -1;
+#ifndef NUMA_DISABLE
+static void *Libnuma_handle;
+static int Stderr_save = -1;
+#if defined(PRETEND_NUMA) || defined(PRETEND8CPUS)
+static int Numa_max_node(void) { return 3; }
+static int Numa_node_of_cpu(int num) { return (num % 4); }
+#else
+static int (*Numa_max_node)(void);
+static int (*Numa_node_of_cpu)(int num);
+#endif
+#endif
 
 /*######  Sort callbacks  ################################################*/
 
@@ -226,14 +246,20 @@ SCB_NUM1(CPU, pcpu)
 SCB_NUM1(DAT, drs)
 SCB_NUM1(DRT, dt)
 SCB_STRS(ENV, environ[0])
-SCB_NUM1(FLG, flags)
 SCB_NUM1(FL1, maj_flt)
 SCB_NUM1(FL2, min_flt)
+SCB_NUM1(FLG, flags)
 SCB_NUM1(FV1, maj_delta)
 SCB_NUM1(FV2, min_delta)
 SCB_NUMx(GID, egid)
 SCB_STRS(GRP, egroup)
 SCB_NUMx(NCE, nice)
+SCB_NUM1(NS1, ns[IPCNS])
+SCB_NUM1(NS2, ns[MNTNS])
+SCB_NUM1(NS3, ns[NETNS])
+SCB_NUM1(NS4, ns[PIDNS])
+SCB_NUM1(NS5, ns[USERNS])
+SCB_NUM1(NS6, ns[UTSNS])
 #ifdef OOMEM_ENABLE
 SCB_NUM1(OOA, oom_adj)
 SCB_NUM1(OOM, oom_score)
@@ -331,16 +357,17 @@ static void at_eoj (void) {
    if (Ttychanged) {
       tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original);
       if (keypad_local) putp(keypad_local);
-      if (exit_ca_mode)
+      putp(tg2(0, Screen_rows));
+      putp("\n");
+#ifdef OFF_SCROLLBK
+      if (exit_ca_mode) {
          // this next will also replace top's most recent screen with the
          // original display contents that were visible at our invocation
          putp(exit_ca_mode);
-      else {
-         // but if we can't, we'll simply do it as old top always used to
-         putp(tg2(0, Screen_rows));
-         putp("\n");
       }
+#endif
       putp(Cap_curs_norm);
+      putp(Cap_clr_eol);
 #ifndef RMAN_IGNORED
       putp(Cap_smam);
 #endif
@@ -356,7 +383,7 @@ static void bye_bye (const char *str) {
    at_eoj();                 // restore tty in preparation for exit
 #ifdef ATEOJ_RPTSTD
 {  proc_t *p;
-   if (!str && Ttychanged) { fprintf(stderr,
+   if (!str && !Frames_signal && Ttychanged) { fprintf(stderr,
       "\n%s's Summary report:"
       "\n\tProgram"
       "\n\t   Linux version = %u.%u.%u, %s"
@@ -426,7 +453,7 @@ static void bye_bye (const char *str) {
 
 #ifndef OFF_HST_HASH
 #ifdef ATEOJ_RPTHSH
-   if (!str && Ttychanged) {
+   if (!str && !Frames_signal && Ttychanged) {
       int i, j, pop, total_occupied, maxdepth, maxdepth_sav, numdepth
          , cross_foot, sz = HHASH_SIZ * (unsigned)sizeof(int);
       int depths[HHASH_SIZ];
@@ -500,10 +527,14 @@ static void bye_bye (const char *str) {
 #endif // end: ATEOJ_RPTHSH
 #endif // end: OFF_HST_HASH
 
+#ifndef NUMA_DISABLE
+  if (Libnuma_handle) dlclose(Libnuma_handle);
+#endif
    if (str) {
       fputs(str, stderr);
       exit(EXIT_FAILURE);
    }
+   if (Batch) putp("\n");
    exit(EXIT_SUCCESS);
 } // end: bye_bye
 
@@ -564,6 +595,7 @@ static void sig_endpgm (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: sigfillset, sigprocmask
    sigfillset(&ss);
    sigprocmask(SIG_BLOCK, &ss, NULL);
+   Frames_signal = BREAK_sig;
    bye_bye(NULL);
    (void)dont_care_sig;
 } // end: sig_endpgm
@@ -571,11 +603,7 @@ static void sig_endpgm (int dont_care_sig) {
 
         /*
          * Catches:
-         *    SIGTSTP, SIGTTIN and SIGTTOU
-         * note:
-         *    we don't fiddle with with those enter/exit_ca_mode strings
-         *    because we want to retain most of the last screen contents
-         *    as a visual reminder this program is suspended, not ended! */
+         *    SIGTSTP, SIGTTIN and SIGTTOU */
 static void sig_paused (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: tcsetattr, tcdrain, raise
    if (-1 == tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original))
@@ -599,7 +627,7 @@ static void sig_paused (int dont_care_sig) {
 #endif
    if (keypad_xmit) putp(keypad_xmit);
    putp(Cursor_state);
-   Frames_resize = RESIZ_sig;
+   Frames_signal = BREAK_sig;
    (void)dont_care_sig;
 } // end: sig_paused
 
@@ -610,7 +638,7 @@ static void sig_paused (int dont_care_sig) {
 static void sig_resize (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: tcdrain
    tcdrain(STDOUT_FILENO);
-   Frames_resize = RESIZ_sig;
+   Frames_signal = BREAK_sig;
    (void)dont_care_sig;
 } // end: sig_resize
 
@@ -731,14 +759,6 @@ static int show_pmt (const char *str) {
 
 
         /*
-         * Show a special coordinate message, in support of scrolling */
-static inline void show_scroll (void) {
-   PUTT(Scroll_fmts, tg2(0, Msg_row), Frame_maxtask);
-   putp(tg2(0, Msg_row));
-} // end: show_scroll
-
-
-        /*
          * Show lines with specially formatted elements, but only output
          * what will fit within the current screen width.
          *    Our special formatting consists of:
@@ -838,7 +858,7 @@ static void show_special (int interact, const char *glob) {
 
         /*
          * Create a nearly complete scroll coordinates message, but still
-         * a format string since we'll be missing a tgoto and total tasks. */
+         * a format string since we'll be missing the current total tasks. */
 static void updt_scroll_msg (void) {
    char tmp1[SMLBUFSIZ], tmp2[SMLBUFSIZ];
    int totpflgs = Curwin->totpflgs;
@@ -859,8 +879,10 @@ static void updt_scroll_msg (void) {
    if (Curwin->varcolbeg)
       snprintf(tmp2, sizeof(tmp2), "%s + %d", tmp1, Curwin->varcolbeg);
 #endif
+   // this Scroll_fmts string no longer provides for termcap tgoto so that
+   // the usage timing is critical -- see frame_make() for additional info
    snprintf(Scroll_fmts, sizeof(Scroll_fmts)
-      , "%%s%s  %.*s%s", Caps_off, Screen_cols - 3, tmp2, Cap_clr_eol);
+      , "%s  %.*s%s", Caps_off, Screen_cols - 3, tmp2, Cap_clr_eol);
 } // end: updt_scroll_msg
 
 /*######  Low Level Memory/Keyboard/File I/O support  ####################*/
@@ -909,12 +931,13 @@ static inline int ioa (struct timespec *ts) {
    FD_ZERO(&fs);
    FD_SET(STDIN_FILENO, &fs);
 
-#ifndef SIGNALS_LESS // conditional comments are silly, but help in documenting
-   // hold here until we've got keyboard input, any signal (including SIGWINCH)
-#else
+#ifdef SIGNALS_LESS // conditional comments are silly, but help in documenting
    // hold here until we've got keyboard input, any signal except SIGWINCH
-#endif
    // or (optionally) we timeout with nanosecond granularity
+#else
+   // hold here until we've got keyboard input, any signal (including SIGWINCH)
+   // or (optionally) we timeout with nanosecond granularity
+#endif
    rc = pselect(STDIN_FILENO + 1, &fs, NULL, NULL, ts, &Sigwinch_set);
 
    if (rc < 0) rc = 0;
@@ -1244,7 +1267,7 @@ static float get_float (const char *prompt) {
    float f;
 
    line = ioline(prompt);
-   if (!line[0] || Frames_resize) return -1.0;
+   if (!line[0] || Frames_signal) return -1.0;
    // note: we're not allowing negative floats
    if (strcspn(line, "+,.0123456789")) {
       show_msg(N_txt(BAD_numfloat_txt));
@@ -1265,7 +1288,7 @@ static int get_int (const char *prompt) {
    int n;
 
    line = ioline(prompt);
-   if (Frames_resize) return GET_INT_BAD;
+   if (Frames_signal) return GET_INT_BAD;
    if (!line[0]) return GET_INTNONE;
    // note: we've got to allow negative ints (renice)
    if (strcspn(line, "-+0123456789")) {
@@ -1542,7 +1565,7 @@ static const char *scale_pcnt (float num, int width, int justr) {
    buf[0] = '\0';
    if (Rc.zero_suppress && 0 >= num)
       goto end_justifies;
-#ifndef NOBOOST_PCNT
+#ifdef BOOST_PERCNT
    if (width >= snprintf(buf, sizeof(buf), "%#.3f", num))
       goto end_justifies;
    if (width >= snprintf(buf, sizeof(buf), "%#.2f", num))
@@ -1628,6 +1651,7 @@ end_justifies:
 #define L_EGROUP   PROC_FILLSTATUS | PROC_FILLGRP
 #define L_SUPGRP   PROC_FILLSTATUS | PROC_FILLSUPGRP
 #define L_USED     PROC_FILLSTATUS | PROC_FILLMEM
+#define L_NS       PROC_FILLNS
    // make 'none' non-zero (used to be important to Frames_libflags)
 #define L_NONE     PROC_SPARE_1
    // from either 'stat' or 'status' (preferred), via bits not otherwise used
@@ -1677,7 +1701,7 @@ static FLD_t Fieldstab[] = {
    {     0,     -1,  A_right,  SF(CPU),  L_stat    },
    {     6,     -1,  A_right,  SF(TME),  L_stat    },
    {     9,     -1,  A_right,  SF(TME),  L_stat    }, // P_TM2 slot
-#ifndef NOBOOST_PCNT
+#ifdef BOOST_PERCNT
    {     5,     -1,  A_right,  SF(RES),  L_statm   }, // P_MEM slot
 #else
    {     4,     -1,  A_right,  SF(RES),  L_statm   }, // P_MEM slot
@@ -1718,10 +1742,16 @@ static FLD_t Fieldstab[] = {
    {     3,     -1,  A_right,  SF(FV1),  L_stat    },
    {     3,     -1,  A_right,  SF(FV2),  L_stat    },
 #ifndef NOBOOST_MEMS
-   {     6,  SK_Kb,  A_right,  SF(USE),  L_USED    }
+   {     6,  SK_Kb,  A_right,  SF(USE),  L_USED    },
 #else
-   {     4,  SK_Kb,  A_right,  SF(USE),  L_USED    }
+   {     4,  SK_Kb,  A_right,  SF(USE),  L_USED    },
 #endif
+   {    10,     -1,  A_right,  SF(NS1),  L_NS      }, // IPCNS
+   {    10,     -1,  A_right,  SF(NS2),  L_NS      }, // MNTNS
+   {    10,     -1,  A_right,  SF(NS3),  L_NS      }, // NETNS
+   {    10,     -1,  A_right,  SF(NS4),  L_NS      }, // PIDNS
+   {    10,     -1,  A_right,  SF(NS5),  L_NS      }, // USERNS
+   {    10,     -1,  A_right,  SF(NS6),  L_NS      }  // UTSNS
  #undef SF
  #undef A_left
  #undef A_right
@@ -1777,6 +1807,7 @@ static void adj_geometry (void) {
          if (w_cols && w_cols < W_MIN_COL) w_cols = W_MIN_COL;
          if (w_rows && w_rows < W_MIN_ROW) w_rows = W_MIN_ROW;
       }
+      if (w_cols > SCREENMAX) w_cols = SCREENMAX;
       w_set = 1;
    }
 
@@ -1803,7 +1834,7 @@ static void adj_geometry (void) {
    PSU_CLREOS(0);
 
    fflush(stdout);
-   Frames_resize = RESIZ_clr;
+   Frames_signal = BREAK_off;
 } // end: adj_geometry
 
 
@@ -2114,7 +2145,7 @@ signify_that:
       display_fields(i, (p != NULL));
       fflush(stdout);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -2216,7 +2247,7 @@ static void zap_fieldstab (void) {
       Fieldstab[P_CPN].width = digits;
    }
 
-#ifndef NOBOOST_PCNT
+#ifdef BOOST_PERCNT
    Cpu_pmax = 99.9;
    Fieldstab[P_CPU].width = 5;
    if (Rc.mode_irixps && smp_num_cpus > 1 && !Thread_mode) {
@@ -2243,6 +2274,7 @@ static void zap_fieldstab (void) {
 
    /* and accommodate optional wider non-scalable columns (maybe) */
    if (!AUTOX_MODE) {
+      int i;
       Fieldstab[P_UED].width = Fieldstab[P_URD].width
          = Fieldstab[P_USD].width = Fieldstab[P_GID].width
          = Rc.fixed_widest ? 5 + Rc.fixed_widest : 5;
@@ -2253,6 +2285,9 @@ static void zap_fieldstab (void) {
          = Rc.fixed_widest ? 8 + Rc.fixed_widest : 8;
       Fieldstab[P_WCH].width
          = Rc.fixed_widest ? 10 + Rc.fixed_widest : 10;
+      for (i = P_NS1; i < P_NS1 + NUM_NS; i++)
+         Fieldstab[i].width
+            = Rc.fixed_widest ? 10 + Rc.fixed_widest : 10;
    }
 
    /* plus user selectable scaling */
@@ -2272,16 +2307,24 @@ static void zap_fieldstab (void) {
          * we preserve all cpu data in our CPU_t array which is organized
          * as follows:
          *    cpus[0] thru cpus[n] == tics for each separate cpu
-         *    cpus[Cpu_faux_tot]   == tics from the 1st /proc/stat line */
+         *    cpus[sumSLOT]        == tics from the 1st /proc/stat line
+         *  [ and beyond sumSLOT   == tics for each cpu NUMA node ] */
 static CPU_t *cpus_refresh (CPU_t *cpus) {
+ #define sumSLOT ( smp_num_cpus )
+ #define totSLOT ( 1 + smp_num_cpus + Numa_node_tot)
    static FILE *fp = NULL;
-   static int sav_cpus = -1;
-   char buf[MEDBUFSIZ]; // enough for /proc/stat CPU line (not the intr line)
-   int i;
+   static int siz, sav_slot = -1;
+   static char *buf;
+   CPU_t *sum_ptr;                               // avoid gcc subscript bloat
+   int i, num, tot_read;
+#ifndef NUMA_DISABLE
+   int node;
+#endif
+   char *bp;
 
    /*** hotplug_acclimated ***/
-   if (sav_cpus != Cpu_faux_tot) {
-      sav_cpus = Cpu_faux_tot;
+   if (sav_slot != sumSLOT) {
+      sav_slot = sumSLOT;
       zap_fieldstab();
       if (fp) { fclose(fp); fp = NULL; }
       if (cpus) { free(cpus); cpus = NULL; }
@@ -2292,63 +2335,110 @@ static CPU_t *cpus_refresh (CPU_t *cpus) {
    if (!fp) {
       if (!(fp = fopen("/proc/stat", "r")))
          error_exit(fmtmk(N_fmt(FAIL_statopn_fmt), strerror(errno)));
-      /* note: we allocate one more CPU_t than Cpu_faux_tot so the last
-               slot can hold tics representing the /proc/stat cpu summary
-               (the 1st line) -- that slot supports our View_CPUSUM toggle */
-      cpus = alloc_c((1 + Cpu_faux_tot) * sizeof(CPU_t));
+      /* note: we allocate one more CPU_t via totSLOT than 'cpus' so that a
+               slot can hold tics representing the /proc/stat cpu summary */
+      cpus = alloc_c(totSLOT * sizeof(CPU_t));
    }
    rewind(fp);
    fflush(fp);
 
+ #define buffGRW 1024
+   /* we slurp in the entire directory thus avoiding repeated calls to fgets,
+      especially in a massively parallel environment.  additionally, each cpu
+      line is then frozen in time rather than changing until we get around to
+      accessing it.  this helps to minimize (not eliminate) most distortions. */
+   tot_read = 0;
+   if (buf) buf[0] = '\0';
+   else buf = alloc_c((siz = buffGRW));
+   while (0 < (num = fread(buf + tot_read, 1, (siz - tot_read), fp))) {
+      tot_read += num;
+      if (tot_read < siz) break;
+      buf = alloc_r(buf, (siz += buffGRW));
+   };
+   buf[tot_read] = '\0';
+   bp = buf;
+ #undef buffGRW
+
    // remember from last time around
-   memcpy(&cpus[Cpu_faux_tot].sav, &cpus[Cpu_faux_tot].cur, sizeof(CT_t));
+   sum_ptr = &cpus[sumSLOT];
+   memcpy(&sum_ptr->sav, &sum_ptr->cur, sizeof(CT_t));
    // then value the last slot with the cpu summary line
-   if (!fgets(buf, sizeof(buf), fp)) error_exit(N_txt(FAIL_statget_txt));
-   memset(&cpus[Cpu_faux_tot].cur, 0, sizeof(CT_t));
-   if (4 > sscanf(buf, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu"
-      , &cpus[Cpu_faux_tot].cur.u, &cpus[Cpu_faux_tot].cur.n, &cpus[Cpu_faux_tot].cur.s
-      , &cpus[Cpu_faux_tot].cur.i, &cpus[Cpu_faux_tot].cur.w, &cpus[Cpu_faux_tot].cur.x
-      , &cpus[Cpu_faux_tot].cur.y, &cpus[Cpu_faux_tot].cur.z))
+   if (4 > sscanf(bp, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu"
+      , &sum_ptr->cur.u, &sum_ptr->cur.n, &sum_ptr->cur.s
+      , &sum_ptr->cur.i, &sum_ptr->cur.w, &sum_ptr->cur.x
+      , &sum_ptr->cur.y, &sum_ptr->cur.z))
          error_exit(N_txt(FAIL_statget_txt));
 #ifndef CPU_ZEROTICS
-   cpus[Cpu_faux_tot].cur.tot = cpus[Cpu_faux_tot].cur.u + cpus[Cpu_faux_tot].cur.s
-      + cpus[Cpu_faux_tot].cur.n + cpus[Cpu_faux_tot].cur.i + cpus[Cpu_faux_tot].cur.w
-      + cpus[Cpu_faux_tot].cur.x + cpus[Cpu_faux_tot].cur.y + cpus[Cpu_faux_tot].cur.z;
+   sum_ptr->cur.tot = sum_ptr->cur.u + sum_ptr->cur.s
+      + sum_ptr->cur.n + sum_ptr->cur.i + sum_ptr->cur.w
+      + sum_ptr->cur.x + sum_ptr->cur.y + sum_ptr->cur.z;
    /* if a cpu has registered substantially fewer tics than those expected,
       we'll force it to be treated as 'idle' so as not to present misleading
       percentages. */
-   cpus[Cpu_faux_tot].edge =
-      ((cpus[Cpu_faux_tot].cur.tot - cpus[Cpu_faux_tot].sav.tot) / smp_num_cpus) / (100 / TICS_EDGE);
+   sum_ptr->edge =
+      ((sum_ptr->cur.tot - sum_ptr->sav.tot) / smp_num_cpus) / (100 / TICS_EDGE);
 #endif
-   // now value each separate cpu's tics, maybe
-   for (i = 0; i < Cpu_faux_tot && i < Screen_rows; i++) {
-#ifdef PRETEND4CPUS
-      rewind(fp);
-      fgets(buf, sizeof(buf), fp);
+
+#ifndef NUMA_DISABLE
+   // forget all of the prior node statistics (maybe)
+   if (CHKw(Curwin, View_CPUNOD))
+      memset(sum_ptr + 1, 0, Numa_node_tot * sizeof(CPU_t));
 #endif
+
+   // now value each separate cpu's tics...
+   for (i = 0; i < sumSLOT; i++) {
+      CPU_t *cpu_ptr = &cpus[i];               // avoid gcc subscript bloat
+#ifdef PRETEND8CPUS
+      bp = buf;
+#endif
+      bp = 1 + strchr(bp, '\n');
       // remember from last time around
-      memcpy(&cpus[i].sav, &cpus[i].cur, sizeof(CT_t));
-      if (!fgets(buf, sizeof(buf), fp)) error_exit(N_txt(FAIL_statget_txt));
-      memset(&cpus[i].cur, 0, sizeof(CT_t));
-      if (4 > sscanf(buf, "cpu%d %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &cpus[i].id
-         , &cpus[i].cur.u, &cpus[i].cur.n, &cpus[i].cur.s
-         , &cpus[i].cur.i, &cpus[i].cur.w, &cpus[i].cur.x
-         , &cpus[i].cur.y, &cpus[i].cur.z)) {
-            memmove(&cpus[i], &cpus[Cpu_faux_tot], sizeof(CPU_t));
+      memcpy(&cpu_ptr->sav, &cpu_ptr->cur, sizeof(CT_t));
+      if (4 > sscanf(bp, "cpu%d %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &cpu_ptr->id
+         , &cpu_ptr->cur.u, &cpu_ptr->cur.n, &cpu_ptr->cur.s
+         , &cpu_ptr->cur.i, &cpu_ptr->cur.w, &cpu_ptr->cur.x
+         , &cpu_ptr->cur.y, &cpu_ptr->cur.z)) {
+            memmove(cpu_ptr, sum_ptr, sizeof(CPU_t));
             break;        // tolerate cpus taken offline
       }
+
 #ifndef CPU_ZEROTICS
-      cpus[i].edge = cpus[Cpu_faux_tot].edge;
-      // this is for symmetry only, it's not currently required
-      cpus[i].cur.tot = cpus[Cpu_faux_tot].cur.tot;
+      cpu_ptr->edge = sum_ptr->edge;
 #endif
-#ifdef PRETEND4CPUS
-      cpus[i].id = i;
+#ifdef PRETEND8CPUS
+      cpu_ptr->id = i;
 #endif
-   }
+#ifndef NUMA_DISABLE
+      /* henceforth, with just a little more arithmetic we can avoid
+         maintaining *any* node stats unless they're actually needed */
+      if (CHKw(Curwin, View_CPUNOD)
+      && Numa_node_tot
+      && -1 < (node = Numa_node_of_cpu(cpu_ptr->id))) {
+         // use our own pointer to avoid gcc subscript bloat
+         CPU_t *nod_ptr = sum_ptr + 1 + node;
+         nod_ptr->cur.u += cpu_ptr->cur.u; nod_ptr->sav.u += cpu_ptr->sav.u;
+         nod_ptr->cur.n += cpu_ptr->cur.n; nod_ptr->sav.n += cpu_ptr->sav.n;
+         nod_ptr->cur.s += cpu_ptr->cur.s; nod_ptr->sav.s += cpu_ptr->sav.s;
+         nod_ptr->cur.i += cpu_ptr->cur.i; nod_ptr->sav.i += cpu_ptr->sav.i;
+         nod_ptr->cur.w += cpu_ptr->cur.w; nod_ptr->sav.w += cpu_ptr->sav.w;
+         nod_ptr->cur.x += cpu_ptr->cur.x; nod_ptr->sav.x += cpu_ptr->sav.x;
+         nod_ptr->cur.y += cpu_ptr->cur.y; nod_ptr->sav.y += cpu_ptr->sav.y;
+         nod_ptr->cur.z += cpu_ptr->cur.z; nod_ptr->sav.z += cpu_ptr->sav.z;
+#ifndef CPU_ZEROTICS
+         /* yep, we re-value this repeatedly for each cpu encountered, but we
+            can then avoid a prior loop to selectively initialize each node */
+         nod_ptr->edge = sum_ptr->edge;
+#endif
+         cpu_ptr->node = node;
+      }
+#endif
+   } // end: for each cpu
+
    Cpu_faux_tot = i;      // tolerate cpus taken offline
 
    return cpus;
+ #undef sumSLOT
+ #undef totSLOT
 } // end: cpus_refresh
 
 
@@ -2573,12 +2663,16 @@ static void sysinfo_refresh (int forced) {
       meminfo();
       mem_secs = cur_secs;
    }
-#ifndef PRETEND4CPUS
+#ifndef PRETEND8CPUS
    /*** hotplug_acclimated ***/
    if (300 <= cur_secs - cpu_secs) {
       cpuinfo();
       Cpu_faux_tot = smp_num_cpus;
       cpu_secs = cur_secs;
+#ifndef NUMA_DISABLE
+      if (Libnuma_handle)
+         Numa_node_tot = Numa_max_node() + 1;
+#endif
    }
 #endif
 } // end: sysinfo_refresh
@@ -2709,7 +2803,7 @@ static void insp_cnt_nl (void) {
    Insp_p[0] = Insp_buf;
    Insp_p[Insp_nl++] = cur;
    Insp_p[Insp_nl] = end;
-   if ((end - cur) == 1)          // if there's a eof null delimiter,
+   if ((end - cur) == 1)          // if there's an eof null delimiter,
       --Insp_nl;                  // don't count it as a new line
 } // end: insp_cnt_nl
 
@@ -2974,7 +3068,7 @@ signify_that:
          lest repeated <Enter> keys produce immediate re-selection in caller */
       tcflush(STDIN_FILENO, TCIFLUSH);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -3019,6 +3113,7 @@ signify_that:
          case '/':
          case 'n':
             insp_find_str(key, &curcol, &curlin);
+            // must re-hide cursor in case a prompt for a string makes it huge
             putp((Cursor_state = Cap_curs_hide));
             break;
          case '=':
@@ -3079,7 +3174,7 @@ signify_that:
          , pid, p->cmd, p->euser, sels));
       INSP_MKSL(0, " ");
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       if (key == INT_MAX) key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -3141,8 +3236,8 @@ static void before (char *me) {
    initialize_nls();
 
    // establish cpu particulars
-#ifdef PRETEND4CPUS
-   smp_num_cpus = 4;
+#ifdef PRETEND8CPUS
+   smp_num_cpus = 8;
 #endif
    Cpu_faux_tot = smp_num_cpus;
    Cpu_States_fmts = N_unq(STATE_lin2x4_fmt);
@@ -3165,12 +3260,31 @@ static void before (char *me) {
    memcpy(HHash_two, HHash_nul, sizeof(HHash_nul));
 #endif
 
+#ifndef NUMA_DISABLE
+#if defined(PRETEND_NUMA) || defined(PRETEND8CPUS)
+   Numa_node_tot = Numa_max_node() + 1;
+#else
+   // we'll try for the most recent version, then a version we know works...
+   if ((Libnuma_handle = dlopen("libnuma.so", RTLD_LAZY))
+    || (Libnuma_handle = dlopen("libnuma.so.1", RTLD_LAZY))) {
+      Numa_max_node = dlsym(Libnuma_handle, "numa_max_node");
+      Numa_node_of_cpu = dlsym(Libnuma_handle, "numa_node_of_cpu");
+      if (Numa_max_node && Numa_node_of_cpu)
+         Numa_node_tot = Numa_max_node() + 1;
+      else {
+         dlclose(Libnuma_handle);
+         Libnuma_handle = NULL;
+      }
+   }
+#endif
+#endif
+
 #ifndef SIGRTMAX       // not available on hurd, maybe others too
 #define SIGRTMAX 32
 #endif
    // lastly, establish a robust signals environment
    sigemptyset(&sa.sa_mask);
-   // with user position perserved through SIGWINCH, we must avoid SA_RESTART
+   // with user position preserved through SIGWINCH, we must avoid SA_RESTART
    sa.sa_flags = 0;
    for (i = SIGRTMAX; i; i--) {
       switch (i) {
@@ -3237,7 +3351,6 @@ static int config_cvt (WIN_t *q) {
       }
    }
    q->rc.winflags |= x;
-   SETw(q, Show_JRNUMS);
 
    // now let's convert old top's more limited fields...
    j = strlen(q->rc.fieldscur);
@@ -3302,26 +3415,25 @@ static void configs_read (void) {
 
    fp = fopen(SYS_RCFILESPEC, "r");
    if (fp) {
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // sys rc file, line 1
-      if (strchr(fbuf, 's')) Secure_mode = 1;
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // sys rc file, line 2
-      sscanf(fbuf, "%f", &Rc.delay_time);
+      if (fgets(fbuf, sizeof(fbuf), fp)) {     // sys rc file, line 1
+         Secure_mode = 1;
+         if (fgets(fbuf, sizeof(fbuf), fp))    // sys rc file, line 2
+            sscanf(fbuf, "%f", &Rc.delay_time);
+      }
       fclose(fp);
    }
 
    fp = fopen(Rc_name, "r");
    if (fp) {
       int tmp_whole, tmp_fract;
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // ignore eyecatcher
+      if (fgets(fbuf, sizeof(fbuf), fp))       // ignore eyecatcher
+         ;                                     // avoid -Wunused-result
       if (6 != fscanf(fp
          , "Id:%c, Mode_altscr=%d, Mode_irixps=%d, Delay_time=%d.%d, Curwin=%d\n"
          , &Rc.id, &Rc.mode_altscr, &Rc.mode_irixps, &tmp_whole, &tmp_fract, &i)) {
             p = fmtmk(N_fmt(RC_bad_files_fmt), Rc_name);
             Rc_questions = -1;
-            goto try_inspect_entries;            // maybe a faulty 'inspect' echo
+            goto try_inspect_entries;          // maybe a faulty 'inspect' echo
       }
       // you saw that, right?  (fscanf stickin' it to 'i')
       Curwin = &Winstk[i];
@@ -3334,10 +3446,10 @@ static void configs_read (void) {
          p = fmtmk(N_fmt(RC_bad_entry_fmt), i+1, Rc_name);
 
          // note: "fieldscur=%__s" on next line should equal PFLAGSSIZ !
-         if (2 != fscanf(fp, "%3s\tfieldscur=%64s\n"
+         if (2 != fscanf(fp, "%3s\tfieldscur=%80s\n"
             , w->rc.winname, w->rc.fieldscur))
                goto default_or_error;
-#if PFLAGSSIZ > 64
+#if PFLAGSSIZ > 80
  // too bad fscanf is not as flexible with his format string as snprintf
  # error Hey, fix the above fscanf 'PFLAGSSIZ' dependency !
 #endif
@@ -3350,19 +3462,20 @@ static void configs_read (void) {
                goto default_or_error;
 
          switch (Rc.id) {
-            case 'f':                  // 3.3.0 thru 3.3.3 (procps-ng)
-               SETw(w, Show_JRNUMS);   //    fall through !
-            case 'g':                  // current RCF_VERSION_ID
-            default:                   // and future versions?
+            case 'a':                          // 3.2.8 (former procps)
+               if (config_cvt(w))
+                  goto default_or_error;          // fall through !
+            case 'f':                          // 3.3.0 thru 3.3.3 (procps-ng)
+               SETw(w, Show_JRNUMS);              // fall through !
+            case 'g':                          // 3.3.4 thru 3.3.8
+               scat(w->rc.fieldscur, RCF_PLUS_H); // fall through !
+            case 'h':                          // current RCF_VERSION_ID
+            default:                           // and future versions?
                if (strlen(w->rc.fieldscur) != sizeof(DEF_FIELDS) - 1)
                   goto default_or_error;
                for (x = 0; x < P_MAXPFLGS; ++x)
                   if (P_MAXPFLGS <= FLDget(w, x))
                      goto default_or_error;
-               break;
-            case 'a':                  // 3.2.8 (former procps)
-               if (config_cvt(w))
-                  goto default_or_error;
                break;
          }
 #ifndef USE_X_COLHDR
@@ -3371,8 +3484,9 @@ static void configs_read (void) {
       } // end: for (GROUPSMAX)
 
       // any new addition(s) last, for older rcfiles compatibility...
-      fscanf(fp, "Fixed_widest=%d, Summ_mscale=%d, Task_mscale=%d, Zero_suppress=%d\n"
-         , &Rc.fixed_widest, &Rc.summ_mscale, &Rc.task_mscale, &Rc.zero_suppress);
+      if (fscanf(fp, "Fixed_widest=%d, Summ_mscale=%d, Task_mscale=%d, Zero_suppress=%d\n"
+         , &Rc.fixed_widest, &Rc.summ_mscale, &Rc.task_mscale, &Rc.zero_suppress))
+            ;                                  // avoid -Wunused-result
 
 try_inspect_entries:
       // we'll start off Inspect stuff with 1 'potential' blank line
@@ -3673,8 +3787,10 @@ static void whack_terminal (void) {
    // thanks anyway stdio, but we'll manage buffering at the frame level...
    setbuffer(stdout, Stdout_buf, sizeof(Stdout_buf));
 #endif
+#ifdef OFF_SCROLLBK
    // this has the effect of disabling any troublesome scrollback buffer...
    if (enter_ca_mode) putp(enter_ca_mode);
+#endif
    // and don't forget to ask iokey to initialize his tinfo_tab
    iokey(0);
 } // end: whack_terminal
@@ -3719,12 +3835,12 @@ static WIN_t *win_select (int ch) {
       if (1 > (ch = iokey(1))) return w;
    }
    switch (ch) {
-      case 'a':                         // we don't carry 'a' / 'w' in our
-         w = w->next;                   // pmt - they're here for a good
-         break;                         // friend of ours -- wins_colors.
-      case 'w':                         // (however those letters work via
-         w = w->prev;                   // the pmt too but gee, end-loser
-         break;                         // should just press the darn key)
+      case 'a':                   // we don't carry 'a' / 'w' in our
+         w = w->next;             // pmt - they're here for a good
+         break;                   // friend of ours -- wins_colors.
+      case 'w':                   // (however those letters work via
+         w = w->prev;             // the pmt too but gee, end-loser
+         break;                   // should just press the darn key)
       case '1': case '2' : case '3': case '4':
          w = &Winstk[ch - '1'];
          break;
@@ -3804,7 +3920,7 @@ signify_that:
       putp(Cap_clr_eos);
       fflush(stdout);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -3947,6 +4063,17 @@ static void wins_stage_2 (void) {
    // fill in missing Fieldstab members and build each window's columnhdr
    zap_fieldstab();
 
+#ifndef NUMA_DISABLE
+   /* there's a chance that damn libnuma may spew to stderr so we gotta
+      make sure he does not corrupt poor ol' top's first output screen!
+      Yes, he provides some overridable 'weak' functions to change such
+      behavior but we can't exploit that since we don't follow a normal
+      ld route to symbol resolution (we use that dlopen() guy instead)! */
+   Stderr_save = dup(fileno(stderr));
+   if (-1 < Stderr_save && freopen("/dev/null", "w", stderr))
+      ;                           // avoid -Wunused-result
+#endif
+
    // lastly, initialize a signal set used to throttle one troublesome signal
    sigemptyset(&Sigwinch_set);
 #ifdef SIGNALS_LESS
@@ -4036,7 +4163,7 @@ signify_that:
    putp(Cap_clr_eos);
    fflush(stdout);
 
-   if (Frames_resize) goto signify_that;
+   if (Frames_signal) goto signify_that;
    key = iokey(1);
    if (key < 1) goto signify_that;
 
@@ -4052,7 +4179,7 @@ signify_that:
                , Winstk[2].rc.winname, Winstk[3].rc.winname));
             putp(Cap_clr_eos);
             fflush(stdout);
-            if (Frames_resize || (key = iokey(1)) < 1) {
+            if (Frames_signal || (key = iokey(1)) < 1) {
                adj_geometry();
                putp(Cap_clr_scr);
             } else w = win_select(key);
@@ -4242,7 +4369,7 @@ static void keys_global (int ch) {
                if (0 > pid) pid = def;
                str = ioline(fmtmk(N_fmt(GET_sigs_num_fmt), pid, SIGTERM));
                if (*str) sig = signal_name_to_number(str);
-               if (Frames_resize) break;
+               if (Frames_signal) break;
                if (0 < sig && kill(pid, sig))
                   show_msg(fmtmk(N_fmt(FAIL_signals_fmt)
                      , pid, sig, strerror(errno)));
@@ -4304,7 +4431,35 @@ static void keys_summary (int ch) {
 
    switch (ch) {
       case '1':
-         TOGw(w, View_CPUSUM);
+         if (CHKw(w, View_CPUNOD)) OFFw(w, View_CPUSUM);
+         else TOGw(w, View_CPUSUM);
+         OFFw(w, View_CPUNOD);
+         SETw(w, View_STATES);
+         break;
+      case '2':
+         if (!Numa_node_tot)
+            show_msg(N_txt(NUMA_nodenot_txt));
+         else {
+            if (Numa_node_sel < 0) TOGw(w, View_CPUNOD);
+            if (!CHKw(w, View_CPUNOD)) SETw(w, View_CPUSUM);
+            SETw(w, View_STATES);
+            Numa_node_sel = -1;
+         }
+         break;
+      case '3':
+         if (!Numa_node_tot)
+            show_msg(N_txt(NUMA_nodenot_txt));
+         else {
+            int num = get_int(fmtmk(N_fmt(NUMA_nodeget_fmt), Numa_node_tot -1));
+            if (GET_INTNONE < num) {
+               if (num >= 0 && num < Numa_node_tot) {
+                  Numa_node_sel = num;
+                  SETw(w, View_CPUNOD | View_STATES);
+                  OFFw(w, View_CPUSUM);
+               } else
+                  show_msg(N_txt(NUMA_nodebad_txt));
+            }
+         }
          break;
       case 'C':
          VIZTOGw(w, View_SCROLL);
@@ -4754,7 +4909,7 @@ static void do_key (int ch) {
          , 'I', 'k', 'r', 's', 'X', 'Y', 'Z', '0'
          , kbd_ENTER, kbd_SPACE, '\0' } },
       { keys_summary,
-         { '1', 'C', 'l', 'm', 't', '\0' } },
+         { '1', '2', '3', 'C', 'l', 'm', 't', '\0' } },
       { keys_task,
          { '#', '<', '>', 'b', 'c', 'i', 'J', 'j', 'n', 'O', 'o'
          , 'R', 'S', 'U', 'u', 'V', 'x', 'y', 'z'
@@ -4768,26 +4923,24 @@ static void do_key (int ch) {
    };
    int i;
 
-   putp((Cursor_state = Cap_curs_hide));
    switch (ch) {
       case 0:                // ignored (always)
       case kbd_ESC:          // ignored (sometimes)
-         return;
+         goto all_done;
       case 'q':              // no return from this guy
          bye_bye(NULL);
       case 'W':              // no need for rebuilds
          write_rcfile();
-         return;
+         goto all_done;
       default:               // and now, the real work...
          for (i = 0; i < MAXTBL(key_tab); ++i)
             if (strchr(key_tab[i].keys, ch)) {
                key_tab[i].func(ch);
-               Frames_resize = RESIZ_kbd;
-               putp((Cursor_state = Cap_curs_hide));
-               return;
+               Frames_signal = BREAK_kbd;
+               goto all_done;
             }
    };
-   /* Frames_resize above will force a rebuild of all column headers and
+   /* Frames_signal above will force a rebuild of all column headers and
       the PROC_FILLxxx flags.  It's NOT simply lazy programming.  Here are
       some keys that COULD require new column headers and/or libproc flags:
          'A' - likely
@@ -4810,6 +4963,8 @@ static void do_key (int ch) {
     */
 
    show_msg(N_txt(UNKNOWN_cmds_txt));
+all_done:
+   putp((Cursor_state = Cap_curs_hide));
 } // end: do_key
 
 
@@ -4868,16 +5023,18 @@ static void summary_show (void) {
  #define anyFLG 0xffffff
    static CPU_t *smpcpu = NULL;
    WIN_t *w = Curwin;             // avoid gcc bloat with a local copy
+   char tmp[MEDBUFSIZ];
+   int i;
 
    // Display Uptime and Loadavg
    if (isROOM(View_LOADAV, 1)) {
       if (!Rc.mode_altscr)
-         show_special(0, fmtmk(LOADAV_line, Myname, sprint_uptime()));
+         show_special(0, fmtmk(LOADAV_line, Myname, sprint_uptime(0)));
       else
          show_special(0, fmtmk(CHKw(w, Show_TASKON)? LOADAV_line_alt : LOADAV_line
-            , w->grpname, sprint_uptime()));
+            , w->grpname, sprint_uptime(0)));
       Msg_row += 1;
-   }
+   } // end: View_LOADAV
 
    // Display Task and Cpu(s) States
    if (isROOM(View_STATES, 2)) {
@@ -4889,13 +5046,44 @@ static void summary_show (void) {
 
       smpcpu = cpus_refresh(smpcpu);
 
+#ifndef NUMA_DISABLE
+      if (!Numa_node_tot) goto numa_nope;
+
+      if (CHKw(w, View_CPUNOD)) {
+         if (Numa_node_sel < 0) {
+            // display the 1st /proc/stat line, then the nodes (if room)
+            summary_hlp(&smpcpu[smp_num_cpus], N_txt(WORD_allcpus_txt));
+            Msg_row += 1;
+            // display each cpu node's states
+            for (i = 0; i < Numa_node_tot; i++) {
+               if (!isROOM(anyFLG, 1)) break;
+               snprintf(tmp, sizeof(tmp), N_fmt(NUMA_nodenam_fmt), i);
+               summary_hlp(&smpcpu[1 + smp_num_cpus + i], tmp);
+               Msg_row += 1;
+            }
+         } else {
+            // display the node summary, then the associated cpus (if room)
+            snprintf(tmp, sizeof(tmp), N_fmt(NUMA_nodenam_fmt), Numa_node_sel);
+            summary_hlp(&smpcpu[1 + smp_num_cpus + Numa_node_sel], tmp);
+            Msg_row += 1;
+            for (i = 0; i < Cpu_faux_tot; i++) {
+               if (Numa_node_sel == smpcpu[i].node) {
+                  if (!isROOM(anyFLG, 1)) break;
+                  snprintf(tmp, sizeof(tmp), N_fmt(WORD_eachcpu_fmt), smpcpu[i].id);
+                  summary_hlp(&smpcpu[i], tmp);
+                  Msg_row += 1;
+               }
+            }
+         }
+      } else
+numa_nope:
+#endif
       if (CHKw(w, View_CPUSUM)) {
          // display just the 1st /proc/stat line
          summary_hlp(&smpcpu[Cpu_faux_tot], N_txt(WORD_allcpus_txt));
          Msg_row += 1;
+
       } else {
-         int i;
-         char tmp[MEDBUFSIZ];
          // display each cpu's states separately, screen height permitting...
          for (i = 0; i < Cpu_faux_tot; i++) {
             snprintf(tmp, sizeof(tmp), N_fmt(WORD_eachcpu_fmt), smpcpu[i].id);
@@ -4904,7 +5092,7 @@ static void summary_show (void) {
             if (!isROOM(anyFLG, 1)) break;
          }
       }
-   }
+   } // end: View_STATES
 
    // Display Memory and Swap stats
    if (isROOM(View_MEMORY, 2)) {
@@ -4953,7 +5141,7 @@ static void summary_show (void) {
     #undef mkM
     #undef mkS
     #undef prT
-   }
+   } // end: View_MEMORY
 
  #undef isROOM
  #undef anyFLG
@@ -5032,14 +5220,14 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
          case P_ENV:
             makeVAR(p->environ[0]);
             break;
-         case P_FLG:
-            cp = make_str(hex_make(p->flags, 1), W, Js, AUTOX_NO);
-            break;
          case P_FL1:
             cp = scale_num(p->maj_flt, W, Jn);
             break;
          case P_FL2:
             cp = scale_num(p->min_flt, W, Jn);
+            break;
+         case P_FLG:
+            cp = make_str(hex_make(p->flags, 1), W, Js, AUTOX_NO);
             break;
          case P_FV1:
             cp = scale_num(p->maj_delta, W, Jn);
@@ -5058,6 +5246,17 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
             break;
          case P_NCE:
             cp = make_num(p->nice, W, Jn, AUTOX_NO);
+            break;
+         case P_NS1:   // IPCNS
+         case P_NS2:   // MNTNS
+         case P_NS3:   // NETNS
+         case P_NS4:   // PIDNS
+         case P_NS5:   // USERNS
+         case P_NS6:   // UTSNS
+         {  long ino = p->ns[i - P_NS1];
+            if (ino > 0) cp = make_num(ino, W, Jn, i);
+            else cp = make_str("-", W, Js, i);
+         }
             break;
 #ifdef OOMEM_ENABLE
          case P_OOA:
@@ -5109,8 +5308,8 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
          case P_THD:
             cp = make_num(p->nlwp, W, Jn, AUTOX_NO);
             break;
-         case P_TME:
          case P_TM2:
+         case P_TME:
          {  TIC_t t = p->utime + p->stime;
             if (CHKw(q, Show_CTIMES)) t += (p->cutime + p->cstime);
             cp = scale_tics(t, W, Jn);
@@ -5242,7 +5441,7 @@ static int window_show (WIN_t *q, int wmax) {
       while (i < Frame_maxtask && lwin < wmax) {
          if ((CHKw(q, Show_IDLEPS) || isBUSY(q->ppt[i]))
          && user_matched(q, q->ppt[i])
-         && *task_show(q, q->ppt[i++]))
+         && *task_show(q, q->ppt[i]))
             ++lwin;
          ++i;
       }
@@ -5286,7 +5485,7 @@ static void frame_hlp (int wix, int max) {
          * (*subordinate* functions invoked know WHEN the user's had)
          * (ENOUGH already.  And at Frame End, it SHOULD be apparent)
          * (WE am d'MAN -- clearing UNUSED screen LINES and ensuring)
-         * (the CURSOR is STUCK in just the RIGHT place, know what I)
+         * (that those auto-sized columns are addressed, know what I)
          * (mean?  Huh, "doesn't DO MUCH"!  Never, EVER think or say)
          * (THAT about THIS function again, Ok?  Good that's better.)
          *
@@ -5298,7 +5497,7 @@ static void frame_make (void) {
    int i, scrlins;
 
    // deal with potential signal(s) since the last time around...
-   if (Frames_resize)
+   if (Frames_signal)
       zap_fieldstab();
 
    // whoa either first time or thread/task mode change, (re)prime the pump...
@@ -5315,7 +5514,14 @@ static void frame_make (void) {
    Tree_idx = Pseudo_row = Msg_row = scrlins = 0;
    summary_show();
    Max_lines = (Screen_rows - Msg_row) - 1;
-   OFFw(Curwin, INFINDS_xxx);
+   OFFw(w, INFINDS_xxx);
+
+   /* one way or another, rid us of any prior frame's msg
+      [ now that this is positioned after the call to summary_show(), ]
+      [ we no longer need or employ tg2(0, Msg_row) since all summary ]
+      [ lines end with a newline, and header lines begin with newline ] */
+   if (VIZISw(w) && CHKw(w, View_SCROLL)) PUTT(Scroll_fmts, Frame_maxtask);
+   else putp(Cap_clr_eol);
 
    if (!Rc.mode_altscr) {
       // only 1 window to show so, piece o' cake
@@ -5332,20 +5538,27 @@ static void frame_make (void) {
       }
    }
 
-   /* clear to end-of-screen (critical if last window is 'idleps off'),
-      then put the cursor in-its-place, and rid us of any prior frame's msg
+   /* clear to end-of-screen - critical if last window is 'idleps off'
       (main loop must iterate such that we're always called before sleep) */
    if (scrlins < Max_lines) {
       putp(Cap_nl_clreos);
       PSU_CLREOS(Pseudo_row);
    }
-   if (VIZISw(w) && CHKw(w, View_SCROLL)) show_scroll();
-   else PUTT("%s%s", tg2(0, Msg_row), Cap_clr_eol);
    fflush(stdout);
 
    /* we'll deem any terminal not supporting tgoto as dumb and disable
       the normal non-interactive output optimization... */
    if (!Cap_can_goto) PSU_CLREOS(0);
+
+#ifndef NUMA_DISABLE
+   /* we gotta reverse the stderr redirect which was employed in wins_stage_2
+      and needed because the two libnuma 'weak' functions were useless to us! */
+   if (-1 < Stderr_save) {
+      dup2(Stderr_save, fileno(stderr));
+      close(Stderr_save);
+      Stderr_save = -1;
+   }
+#endif
 
    /* lastly, check auto-sized width needs for the next iteration */
    if (AUTOX_MODE && Autox_found)
@@ -5388,7 +5601,7 @@ int main (int dont_care_argc, char **argv) {
                     produce a screen refresh. in this main loop frame_make
                     assumes responsibility for such refreshes. other logic
                     in contact with users must deal more obliquely with an
-                    interrupt/refresh (hint: Frames_resize + return code)!
+                    interrupt/refresh (hint: Frames_signal + return code)!
 
                     (everything is perfectly justified plus right margins)
                     (are completely filled, but of course it must be luck)

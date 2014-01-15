@@ -52,10 +52,18 @@ EXTRA_DIST = \
 	Documentation/TODO \
 	sysctl.conf
 
+if BUILD_PIDOF
+usrbin_exec_PROGRAMS += pidof
+dist_man_MANS += pidof.1
+pidof_SOURCES = pidof.c $(top_srcdir)/lib/fileutils.c
+else
+  EXTRA_DIST += pidof.1
+endif
+
 if BUILD_KILL
 bin_PROGRAMS = kill
 dist_man_MANS += kill.1
-kill_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c
+kill_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c $(top_srcdir)/lib/nsutils.c
 else
   EXTRA_DIST += kill.1
 endif
@@ -77,8 +85,8 @@ if BUILD_SKILL
 usrbin_exec_PROGRAMS += \
 	skill \
 	snice
-skill_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c
-snice_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c
+skill_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c $(top_srcdir)/lib/nsutils.c
+snice_SOURCES = skill.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c $(top_srcdir)/lib/nsutils.c
 dist_man_MANS += \
 	skill.1 \
 	snice.1
@@ -89,8 +97,8 @@ else
 endif
 
 free_SOURCES = free.c $(top_srcdir)/lib/strutils.c $(top_srcdir)/lib/fileutils.c
-pgrep_SOURCES = pgrep.c $(top_srcdir)/lib/fileutils.c
-pkill_SOURCES = pgrep.c $(top_srcdir)/lib/fileutils.c
+pgrep_SOURCES = pgrep.c $(top_srcdir)/lib/fileutils.c $(top_srcdir)/lib/nsutils.c
+pkill_SOURCES = pgrep.c $(top_srcdir)/lib/fileutils.c $(top_srcdir)/lib/nsutils.c
 pmap_SOURCES = pmap.c $(top_srcdir)/lib/fileutils.c
 pwdx_SOURCES = pwdx.c $(top_srcdir)/lib/fileutils.c
 sysctl_SOURCES = sysctl.c $(top_srcdir)/lib/fileutils.c

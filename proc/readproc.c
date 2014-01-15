@@ -457,6 +457,47 @@ static void oomadj2proc(const char* S, proc_t *restrict P)
 #endif
 ///////////////////////////////////////////////////////////////////////
 
+static const char *ns_names[] = {
+    [IPCNS] = "ipc",
+    [MNTNS] = "mnt",
+    [NETNS] = "net",
+    [PIDNS] = "pid",
+    [USERNS] = "user",
+    [UTSNS] = "uts",
+};
+
+const char *get_ns_name(int id) {
+    if (id >= NUM_NS)
+        return NULL;
+    return ns_names[id];
+}
+
+int get_ns_id(const char *name) {
+    int i;
+
+    for (i = 0; i < NUM_NS; i++)
+        if (!strcmp(ns_names[i], name))
+            return i;
+    return -1;
+}
+
+static void ns2proc(const char *directory, proc_t *restrict p) {
+    char path[PROCPATHLEN];
+    struct stat sb;
+    int i;
+
+    for (i = 0; i < NUM_NS; i++) {
+        snprintf(path, sizeof(path), "%s/ns/%s", directory, ns_names[i]);
+        if (0 == stat(path, &sb))
+            p->ns[i] = (long)sb.st_ino;
+#if 0
+        else                           // this allows a caller to distinguish
+            p->ns[i] = -errno;         // between the ENOENT or EACCES errors
+#endif
+    }
+}
+///////////////////////////////////////////////////////////////////////
+
 
 // Reads /proc/*/stat files, being careful not to trip over processes with
 // names like ":-) 1 2 3 4 5 6".
@@ -533,29 +574,28 @@ static void statm2proc(const char* s, proc_t *restrict P) {
 }
 
 static int file2str(const char *directory, const char *what, struct utlbuf_s *ub) {
- #define readMAX  4096
- #define buffMIN (tot_read + num + 1)  // +1 for the '\0' delimiter
-    char path[PROCPATHLEN], chunk[readMAX];
+ #define buffGRW 1024
+    char path[PROCPATHLEN];
     int fd, num, tot_read = 0;
 
     /* on first use we preallocate a buffer of minimum size to emulate
        former 'local static' behavior -- even if this read fails, that
-       buffer will likely soon be used for another sudirectory anyway */
+       buffer will likely soon be used for another subdirectory anyway
+       ( besides, with this xcalloc we will never need to use memcpy ) */
     if (ub->buf) ub->buf[0] = '\0';
-    else ub->buf = xcalloc((ub->siz = readMAX));
+    else ub->buf = xcalloc((ub->siz = buffGRW));
     sprintf(path, "%s/%s", directory, what);
     if (-1 == (fd = open(path, O_RDONLY, 0))) return -1;
-    while (0 < (num = read(fd, chunk, readMAX))) {
-        if (ub->siz < buffMIN)
-            ub->buf = xrealloc(ub->buf, (ub->siz = buffMIN));
-        memcpy(ub->buf + tot_read, chunk, num);
+    while (0 < (num = read(fd, ub->buf + tot_read, ub->siz - tot_read))) {
         tot_read += num;
+        if (tot_read < ub->siz) break;
+        ub->buf = xrealloc(ub->buf, (ub->siz += buffGRW));
     };
     ub->buf[tot_read] = '\0';
     close(fd);
+    if (unlikely(tot_read < 1)) return -1;
     return tot_read;
- #undef readMAX
- #undef buffMIN
+ #undef buffGRW
 }
 
 static char** file2strvec(const char* directory, const char* what) {
@@ -845,6 +885,9 @@ static proc_t* simple_readproc(PROCTAB *restrict const PT, proc_t *restrict cons
     }
 #endif
 
+    if (unlikely(flags & PROC_FILLNS))          // read /proc/#/ns/*
+        ns2proc(path, p);
+
     return p;
 next_proc:
     return NULL;
@@ -975,6 +1018,9 @@ static proc_t* simple_readtask(PROCTAB *restrict const PT, const proc_t *restric
             oomadj2proc(ub.buf, t);
     }
 #endif
+
+    if (unlikely(flags & PROC_FILLNS))                  // read /proc/#/task/#/ns/*
+        ns2proc(path, t);
 
     return t;
 next_task:

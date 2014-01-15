@@ -259,6 +259,24 @@ static void build_two_nlstabs (void) {
 /* Translation Hint: maximum 'USED' = 4 */
    Head_nlstab[P_USE] = _("USED");
    Desc_nlstab[P_USE] = _("Res+Swap Size (KiB)");
+/* Translation Hint: maximum 'nsIPC' = 10 */
+   Head_nlstab[P_NS1] = _("nsIPC");
+   Desc_nlstab[P_NS1] = _("IPC namespace Inode");
+/* Translation Hint: maximum 'nsMNT' = 10 */
+   Head_nlstab[P_NS2] = _("nsMNT");
+   Desc_nlstab[P_NS2] = _("MNT namespace Inode");
+/* Translation Hint: maximum 'nsNET' = 10 */
+   Head_nlstab[P_NS3] = _("nsNET");
+   Desc_nlstab[P_NS3] = _("NET namespace Inode");
+/* Translation Hint: maximum 'nsPID' = 10 */
+   Head_nlstab[P_NS4] = _("nsPID");
+   Desc_nlstab[P_NS4] = _("PID namespace Inode");
+/* Translation Hint: maximum 'nsUSER' = 10 */
+   Head_nlstab[P_NS5] = _("nsUSER");
+   Desc_nlstab[P_NS5] = _("USER namespace Inode");
+/* Translation Hint: maximum 'nsUTS' = 10 */
+   Head_nlstab[P_NS6] = _("nsUTS");
+   Desc_nlstab[P_NS6] = _("UTS namespace Inode");
 }
 
 
@@ -442,6 +460,10 @@ static void build_norm_nlstab (void) {
    Norm_nlstab[WORD_exclude_txt] = _("exclude");
    Norm_nlstab[OSEL_statlin_fmt] = _("<Enter> to resume, filters: %s");
    Norm_nlstab[WORD_noneone_txt] = _("none");
+   Norm_nlstab[NUMA_nodenam_fmt] = _("Node%-2d:");
+   Norm_nlstab[NUMA_nodeget_fmt] = _("expand which node (0-%d)");
+   Norm_nlstab[NUMA_nodebad_txt] = _("invalid node");
+   Norm_nlstab[NUMA_nodenot_txt] = _("sorry, NUMA extensions unavailable");
 }
 
 
@@ -481,7 +503,7 @@ static void build_uniq_nlstab (void) {
       "\n"
       "  Z~5,~1B~5,E,e   Global: '~1Z~2' colors; '~1B~2' bold; '~1E~2'/'~1e~2' summary/task memory scale\n"
       "  l,t,m     Toggle Summary: '~1l~2' load avg; '~1t~2' task/cpu stats; '~1m~2' memory info\n"
-      "  0,1,I     Toggle: '~10~2' Zero suppress; '~11~2' separate cpu(s); '~1I~2' Irix mode\n"
+      "  0,1,2,3,I Toggle: '~10~2' zeros; '~11~2/~12~2/~13~2' cpus or numa node views; '~1I~2' Irix mode\n"
       "  f,F,X     Fields: '~1f~2'/'~1F~2' add/remove/order/sort; '~1X~2' increase fixed-width\n"
       "\n"
       "  L,&,<,> . Locate: '~1L~2'/'~1&~2' find/again; Move sort column: '~1<~2'/'~1>~2' left/right\n"
@@ -614,7 +636,7 @@ static void build_uniq_nlstab (void) {
    .                 words:         total, used, free, buffers, cached */
    Uniq_nlstab[MEMORY_lines_fmt] = _(""
       "%s Mem: ~3 %9.9s~2total,~3 %9.9s~2used,~3 %9.9s~2free,~3 %9.9s~2buffers~3\n"
-      "%s Swap:~3 %9.9s~2total,~3 %9.9s~2used,~3 %9.9s~2free,~3 %9.9s~2cached~3\n");
+      "%s Swap:~3 %9.9s~2total,~3 %9.9s~2used,~3 %9.9s~2free.~3 %9.9s~2cached Mem~3\n");
 
    Uniq_nlstab[INSP_hdrsels_fmt] = _(""
       "Inspection~2 Pause at: pid ~1%d~6 running ~1%s~6 as user ~1%s~6\n"

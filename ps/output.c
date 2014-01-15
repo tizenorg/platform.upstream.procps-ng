@@ -71,6 +71,10 @@
 
 #include "common.h"
 
+#ifdef WITH_SYSTEMD
+#include <systemd/sd-login.h>
+#endif
+
 /* TODO:
  * Stop assuming system time is local time.
  */
@@ -132,6 +136,13 @@ static int sr_ ## NAME (const proc_t* P, const proc_t* Q) { \
     q_time=cook_ ##NAME (Q); \
     if (p_time < q_time) return -1; \
     if (p_time > q_time) return 1; \
+    return 0; \
+}
+
+#define CMP_NS(NAME, ID) \
+static int sr_ ## NAME (const proc_t* P, const proc_t* Q) { \
+    if (P->ns[ID] < Q->ns[ID]) return -1; \
+    if (P->ns[ID] > Q->ns[ID]) return  1; \
     return 0; \
 }
 
@@ -211,6 +222,13 @@ CMP_SMALL(state)
 
 CMP_COOKED_TIME(time)
 CMP_COOKED_TIME(etime)
+
+CMP_NS(ipcns, IPCNS);
+CMP_NS(mntns, MNTNS);
+CMP_NS(netns, NETNS);
+CMP_NS(pidns, PIDNS);
+CMP_NS(userns, USERNS);
+CMP_NS(utsns, UTSNS);
 
 /* approximation to: kB of address space that could end up in swap */
 static int sr_swapable(const proc_t* P, const proc_t* Q) {
@@ -1169,9 +1187,149 @@ static int pr_sgi_p(char *restrict const outbuf, const proc_t *restrict const pp
   return snprintf(outbuf, COLWID, "*");
 }
 
+#ifdef WITH_SYSTEMD
+/************************* Systemd stuff ********************************/
+static int pr_sd_unit(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *unit;
+
+  r = sd_pid_get_unit(pp->tgid, &unit);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", unit);
+  free(unit);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_session(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *session;
+
+  r = sd_pid_get_session(pp->tgid, &session);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", session);
+  free(session);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_ouid(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  uid_t ouid;
+
+  r = sd_pid_get_owner_uid(pp->tgid, &ouid);
+  if(r<0) goto fail;
+  return snprintf(outbuf, COLWID, "%d", ouid);
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_machine(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *machine;
+
+  r = sd_pid_get_machine_name(pp->tgid, &machine);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", machine);
+  free(machine);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_uunit(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *unit;
+
+  r = sd_pid_get_user_unit(pp->tgid, &unit);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", unit);
+  free(unit);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_seat(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *session;
+  char *seat;
+  r = sd_pid_get_session(pp->tgid, &session);
+  if(r<0) goto fail;
+  r = sd_session_get_seat(session, &seat);
+  free(session);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", seat);
+  free(seat);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+static int pr_sd_slice(char *restrict const outbuf, const proc_t *restrict const pp){
+  int r;
+  size_t len;
+  char *slice;
+
+  r = sd_pid_get_slice(pp->tgid, &slice);
+  if(r<0) goto fail;
+  len = snprintf(outbuf, COLWID, "%s", slice);
+  free(slice);
+  return len;
+
+fail:
+  outbuf[0] = '-';
+  outbuf[1] = '\0';
+  return 1;
+}
+
+#endif
+/************************ Linux namespaces ******************************/
+
+#define _pr_ns(NAME, ID)\
+static int pr_##NAME(char *restrict const outbuf, const proc_t *restrict const pp) {\
+  if (pp->ns[ID])\
+    return snprintf(outbuf, COLWID, "%li", pp->ns[ID]);\
+  else\
+    return snprintf(outbuf, COLWID, "-");\
+}
+_pr_ns(ipcns, IPCNS);
+_pr_ns(mntns, MNTNS);
+_pr_ns(netns, NETNS);
+_pr_ns(pidns, PIDNS);
+_pr_ns(userns, USERNS);
+_pr_ns(utsns, UTSNS);
 
 /****************** FLASK & seLinux security stuff **********************/
 // move the bulk of this to libproc sometime
+
+#if !ENABLE_LIBSELINUX
 
 static int pr_context(char *restrict const outbuf, const proc_t *restrict const pp){
   char filename[48];
@@ -1201,7 +1359,8 @@ fail:
   return 1;
 }
 
-#if 0
+#else
+
 // This needs more study, considering:
 // 1. the static linking option (maybe disable this in that case)
 // 2. the -z and -Z option issue
@@ -1227,6 +1386,7 @@ static int pr_context(char *restrict const outbuf, const proc_t *restrict const 
     len = strlen(context);
     if(len > max_len) len = max_len;
     memcpy(outbuf, context, len);
+    if (outbuf[len-1] == '\n') --len;
     outbuf[len] = '\0';
     free(context);
   }else{
@@ -1236,6 +1396,7 @@ static int pr_context(char *restrict const outbuf, const proc_t *restrict const 
   }
   return len;
 }
+
 #endif
 
 
@@ -1326,6 +1487,7 @@ static int pr_t_left2(char *restrict const outbuf, const proc_t *restrict const 
 #define USR PROC_FILLUSR     /* uid_t -> user names */
 #define GRP PROC_FILLGRP     /* gid_t -> group names */
 #define WCH PROC_FILLWCHAN   /* do WCHAN lookup */
+#define NS  PROC_FILLNS      /* read namespace information */
 
 #define SGRP PROC_FILLSTATUS | PROC_FILLSUPGRP  /* supgid -> supgrp (names) */
 #define CGRP PROC_FILLCGROUP | PROC_EDITCGRPCVT /* read cgroup */
@@ -1414,6 +1576,7 @@ static const format_struct format_array[] = {
 {"inblk",     "INBLK",   pr_nop,      sr_nop,     5,   0,    BSD, AN|RIGHT}, /*inblock*/
 {"inblock",   "INBLK",   pr_nop,      sr_nop,     5,   0,    DEC, AN|RIGHT}, /*inblk*/
 {"intpri",    "PRI",     pr_opri,     sr_priority, 3,  0,    HPU, TO|RIGHT},
+{"ipcns",     "IPCNS",   pr_ipcns,    sr_ipcns,  10,  NS,    LNX, ET|RIGHT},
 {"jid",       "JID",     pr_nop,      sr_nop,     1,   0,    SGI, PO|RIGHT},
 {"jobc",      "JOBC",    pr_nop,      sr_nop,     4,   0,    XXX, AN|RIGHT},
 {"ktrace",    "KTRACE",  pr_nop,      sr_nop,     8,   0,    BSD, AN|RIGHT},
@@ -1424,6 +1587,9 @@ static const format_struct format_array[] = {
 {"login",     "LOGNAME", pr_nop,      sr_nop,     8,   0,    BSD, AN|LEFT}, /*logname*/   /* double check */
 {"logname",   "LOGNAME", pr_nop,      sr_nop,     8,   0,    XXX, AN|LEFT}, /*login*/
 {"longtname", "TTY",     pr_tty8,     sr_tty,     8,   0,    DEC, PO|LEFT},
+#ifdef WITH_SYSTEMD
+{"lsession",   "SESSION", pr_sd_session, sr_nop,  11,   0,    LNX, ET|LEFT},
+#endif
 {"lstart",    "STARTED", pr_lstart,   sr_nop,    24,   0,    XXX, ET|RIGHT},
 {"luid",      "LUID",    pr_nop,      sr_nop,     5,   0,    LNX, ET|RIGHT}, /* login ID */
 {"luser",     "LUSER",   pr_nop,      sr_nop,     8, USR,    LNX, ET|USER}, /* login USER */
@@ -1436,13 +1602,18 @@ static const format_struct format_array[] = {
 {"m_size",    "SIZE",    pr_size,     sr_size,    5, MEM,    LNX, PO|RIGHT},
 {"m_swap",    "SWAP",    pr_nop,      sr_nop,     5,   0,    LNx, PO|RIGHT},
 {"m_trs",     "TRS",     pr_trs,      sr_trs,     5, MEM,    LNx, PO|RIGHT},
+#ifdef WITH_SYSTEMD
+{"machine",   "MACHINE", pr_sd_machine, sr_nop,  31,   0,    LNX, ET|LEFT},
+#endif
 {"maj_flt",   "MAJFL",   pr_majflt,   sr_maj_flt, 6,   0,    LNX, AN|RIGHT},
 {"majflt",    "MAJFLT",  pr_majflt,   sr_maj_flt, 6,   0,    XXX, AN|RIGHT},
 {"min_flt",   "MINFL",   pr_minflt,   sr_min_flt, 6,   0,    LNX, AN|RIGHT},
 {"minflt",    "MINFLT",  pr_minflt,   sr_min_flt, 6,   0,    XXX, AN|RIGHT},
+{"mntns",     "MNTNS",   pr_mntns,    sr_mntns,  10,  NS,    LNX, ET|RIGHT},
 {"msgrcv",    "MSGRCV",  pr_nop,      sr_nop,     6,   0,    XXX, AN|RIGHT},
 {"msgsnd",    "MSGSND",  pr_nop,      sr_nop,     6,   0,    XXX, AN|RIGHT},
 {"mwchan",    "MWCHAN",  pr_nop,      sr_nop,     6, WCH,    BSD, TO|WCHAN}, /* mutex (FreeBSD) */
+{"netns",     "NETNS",   pr_netns,    sr_netns,  10,  NS,    LNX, ET|RIGHT},
 {"ni",        "NI",      pr_nice,     sr_nice,    3,   0,    BSD, TO|RIGHT}, /*nice*/
 {"nice",      "NI",      pr_nice,     sr_nice,    3,   0,    U98, TO|RIGHT}, /*ni*/
 {"nivcsw",    "IVCSW",   pr_nop,      sr_nop,     5,   0,    XXX, AN|RIGHT},
@@ -1456,6 +1627,9 @@ static const format_struct format_array[] = {
 {"osz",       "SZ",      pr_nop,      sr_nop,     2,   0,    SUN, PO|RIGHT},
 {"oublk",     "OUBLK",   pr_nop,      sr_nop,     5,   0,    BSD, AN|RIGHT}, /*oublock*/
 {"oublock",   "OUBLK",   pr_nop,      sr_nop,     5,   0,    DEC, AN|RIGHT}, /*oublk*/
+#ifdef WITH_SYSTEMD
+{"ouid",      "OWNER",   pr_sd_ouid,  sr_nop,     5,   0,    LNX, ET|LEFT},
+#endif
 {"p_ru",      "P_RU",    pr_nop,      sr_nop,     6,   0,    BSD, AN|RIGHT},
 {"paddr",     "PADDR",   pr_nop,      sr_nop,     6,   0,    BSD, AN|RIGHT},
 {"pagein",    "PAGEIN",  pr_majflt,   sr_maj_flt, 6,   0,    XXX, AN|RIGHT},
@@ -1464,6 +1638,7 @@ static const format_struct format_array[] = {
 {"pgid",      "PGID",    pr_pgid,     sr_pgrp,    5,   0,    U98, PO|PIDMAX|RIGHT},
 {"pgrp",      "PGRP",    pr_pgid,     sr_pgrp,    5,   0,    LNX, PO|PIDMAX|RIGHT},
 {"pid",       "PID",     pr_procs,    sr_procs,   5,   0,    U98, PO|PIDMAX|RIGHT},
+{"pidns",     "PIDNS",   pr_pidns,    sr_pidns,  10,  NS,    LNX, ET|RIGHT},
 {"pmem",      "%MEM",    pr_pmem,     sr_rss,     4,   0,    XXX, PO|RIGHT}, /*%mem*/
 {"poip",      "-",       pr_nop,      sr_nop,     1,   0,    BSD, AN|RIGHT},
 {"policy",    "POL",     pr_class,    sr_sched,   3,   0,    DEC, TO|LEFT},
@@ -1496,6 +1671,9 @@ static const format_struct format_array[] = {
 {"sched",     "SCH",     pr_sched,    sr_sched,   3,   0,    AIX, TO|RIGHT},
 {"scnt",      "SCNT",    pr_nop,      sr_nop,     4,   0,    DEC, AN|RIGHT},  /* man page misspelling of scount? */
 {"scount",    "SC",      pr_nop,      sr_nop,     4,   0,    AIX, AN|RIGHT},  /* scnt==scount, DEC claims both */
+#ifdef WITH_SYSTEMD
+{"seat",      "SEAT",    pr_sd_seat,  sr_nop,    11,   0,    LNX, ET|LEFT},
+#endif
 {"sess",      "SESS",    pr_sess,     sr_session, 5,   0,    XXX, PO|PIDMAX|RIGHT},
 {"session",   "SESS",    pr_sess,     sr_session, 5,   0,    LNX, PO|PIDMAX|RIGHT},
 {"sgi_p",     "P",       pr_sgi_p,    sr_nop,     1,   0,    LNX, TO|RIGHT}, /* "cpu" number */
@@ -1514,6 +1692,9 @@ static const format_struct format_array[] = {
 {"sigmask",   "BLOCKED", pr_sigmask,  sr_nop,     9,   0,    XXX, TO|SIGNAL}, /*blocked*/
 {"size",      "SIZE",    pr_swapable, sr_swapable, 5,  0,    SCO, PO|RIGHT},
 {"sl",        "SL",      pr_nop,      sr_nop,     3,   0,    XXX, AN|RIGHT},
+#ifdef WITH_SYSTEMD
+{"slice",      "SLICE",  pr_sd_slice, sr_nop,    31,   0,    LNX, ET|LEFT},
+#endif
 {"spid",      "SPID",    pr_tasks,    sr_tasks,   5,   0,    SGI, TO|PIDMAX|RIGHT},
 {"stackp",    "STACKP",  pr_stackp,   sr_start_stack, 8, 0,  LNX, PO|RIGHT}, /*start_stack*/
 {"start",     "STARTED", pr_start,    sr_nop,     8,   0,    XXX, ET|RIGHT},
@@ -1562,13 +1743,21 @@ static const format_struct format_array[] = {
 {"uid_hack",  "UID",     pr_euser,    sr_euser,   8, USR,    XXX, ET|USER},
 {"umask",     "UMASK",   pr_nop,      sr_nop,     5,   0,    DEC, AN|RIGHT},
 {"uname",     "USER",    pr_euser,    sr_euser,   8, USR,    DEC, ET|USER}, /* man page misspelling of user? */
+#ifdef WITH_SYSTEMD
+{"unit",      "UNIT",    pr_sd_unit,  sr_nop,    31,   0,    LNX, ET|LEFT},
+#endif
 {"upr",       "UPR",     pr_nop,      sr_nop,     3,   0,    BSD, TO|RIGHT}, /*usrpri*/
 {"uprocp",    "UPROCP",  pr_nop,      sr_nop,     8,   0,    BSD, AN|RIGHT},
 {"user",      "USER",    pr_euser,    sr_euser,   8, USR,    U98, ET|USER}, /* BSD n forces this to UID */
+{"userns",    "USERNS",  pr_userns,   sr_userns, 10,  NS,    LNX, ET|RIGHT},
 {"usertime",  "USER",    pr_nop,      sr_nop,     4,   0,    DEC, ET|RIGHT},
 {"usrpri",    "UPR",     pr_nop,      sr_nop,     3,   0,    DEC, TO|RIGHT}, /*upr*/
 {"util",      "C",       pr_c,        sr_pcpu,    2,   0,    SGI, ET|RIGHT}, // not sure about "C"
 {"utime",     "UTIME",   pr_nop,      sr_utime,   6,   0,    LNx, ET|RIGHT},
+{"utsns",     "UTSNS",   pr_utsns,    sr_utsns,  10,  NS,    LNX, ET|RIGHT},
+#ifdef WITH_SYSTEMD
+{"uunit",     "UUNIT",   pr_sd_uunit, sr_nop,    31,   0,    LNX, ET|LEFT},
+#endif
 {"vm_data",   "DATA",    pr_nop,      sr_vm_data, 5,   0,    LNx, PO|RIGHT},
 {"vm_exe",    "EXE",     pr_nop,      sr_vm_exe,  5,   0,    LNx, PO|RIGHT},
 {"vm_lib",    "LIB",     pr_nop,      sr_vm_lib,  5,   0,    LNx, PO|RIGHT},

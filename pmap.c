@@ -591,7 +591,7 @@ static int one_proc(proc_t * p)
 		unsigned long long file_offset, inode;
 		unsigned dev_major, dev_minor;
 		unsigned long long smap_value;
-		char smap_key[20];
+		char smap_key[21];
 
 		/* hex values are lower case or numeric, keys are upper */
 		if (mapbuf[0] >= 'A' && mapbuf[0] <= 'Z') {
@@ -1012,7 +1012,9 @@ int main(int argc, char **argv)
 		{NULL, 0, NULL, 0}
 	};
 
+#ifdef HAVE_PROGRAM_INVOCATION_NAME
 	program_invocation_name = program_invocation_short_name;
+#endif
 	nls_initialize();
 	atexit(close_stdout);
 

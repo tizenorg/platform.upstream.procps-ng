@@ -142,12 +142,12 @@ static void print_display_or_interface(const char *restrict host, int len, int r
 				fputc('-', stdout);
 			}
 		} else { /* multiple colons found - it's an IPv6 address */
-	
+
 			/* search for % (interface separator in case of IPv6 link address) */
 			while ( (tmp < (host + len)) && (*tmp != '%') && isprint(*tmp) ) tmp++;
 
 			if (*tmp == '%') { /* interface separator found */
-	
+
 				/* number of chars till the end of the input field */
 				len -= (tmp - host);
 
@@ -236,10 +236,12 @@ static void print_time_ival7(time_t t, int centi_sec, FILE * fout)
 			fprintf(fout, _(" %2ludays"), t / (24 * 60 * 60));
 		else if (t >= 60 * 60)
 			/* > 1 hour */
+		        /* Translation Hint: Hours:Minutes */
 			fprintf(fout, " %2lu:%02u ", t / (60 * 60),
 				(unsigned)((t / 60) % 60));
 		else if (t > 60)
 			/* > 1 minute */
+		        /* Translation Hint: Minutes:Seconds */
 			fprintf(fout, _(" %2lu:%02um"), t / 60, (unsigned)t % 60);
 		else
 			fprintf(fout, "       ");
@@ -249,12 +251,15 @@ static void print_time_ival7(time_t t, int centi_sec, FILE * fout)
 			fprintf(fout, _(" %2ludays"), t / (24 * 60 * 60));
 		else if (t >= 60 * 60)
 			/* 1 hour or more */
+		        /* Translation Hint: Hours:Minutes */
 			fprintf(fout, _(" %2lu:%02um"), t / (60 * 60),
 				(unsigned)((t / 60) % 60));
 		else if (t > 60)
 			/* 1 minute or more */
+		        /* Translation Hint: Minutes:Seconds */
 			fprintf(fout, " %2lu:%02u ", t / 60, (unsigned)t % 60);
 		else
+		        /* Translation Hint: Seconds:Centiseconds */
 			fprintf(fout, _(" %2lu.%02us"), t, centi_sec);
 	}
 }
@@ -437,12 +442,12 @@ static void __attribute__ ((__noreturn__))
 	fprintf(out,
               _(" %s [options]\n"), program_invocation_short_name);
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -h, --no-header     do not print header\n"
-		" -u, --no-current    ignore current process username\n"
-		" -s, --short         short format\n"
-		" -f, --from          show remote hostname field\n"
-		" -o, --old-style     old style output\n"
-		" -i, --ip-addr       display IP address instead of hostname (if possible)\n"), out);
+	fputs(_(" -h, --no-header     do not print header\n"),out);
+	fputs(_(" -u, --no-current    ignore current process username\n"),out);
+	fputs(_(" -s, --short         short format\n"),out);
+	fputs(_(" -f, --from          show remote hostname field\n"),out);
+	fputs(_(" -o, --old-style     old style output\n"),out);
+	fputs(_(" -i, --ip-addr       display IP address instead of hostname (if possible)\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("     --help     display this help and exit\n"), out);
 	fputs(USAGE_VERSION, out);
@@ -475,15 +480,18 @@ int main(int argc, char **argv)
 	static const struct option longopts[] = {
 		{"no-header", no_argument, NULL, 'h'},
 		{"no-current", no_argument, NULL, 'u'},
-		{"sort", no_argument, NULL, 's'},
+		{"short", no_argument, NULL, 's'},
 		{"from", no_argument, NULL, 'f'},
 		{"old-style", no_argument, NULL, 'o'},
+		{"ip-addr", no_argument, NULL, 'i'},
 		{"help", no_argument, NULL, HELP_OPTION},
 		{"version", no_argument, NULL, 'V'},
 		{NULL, 0, NULL, 0}
 	};
 
+#ifdef HAVE_PROGRAM_INVOCATION_NAME
 	program_invocation_name = program_invocation_short_name;
+#endif
 	setlocale (LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
@@ -572,7 +580,7 @@ int main(int argc, char **argv)
 
 	if (header) {
 		/* print uptime and headers */
-		print_uptime();
+		print_uptime(0);
 		/* Translation Hint: Following five uppercase messages are
 		 * headers. Try to keep alignment intact.  */
 		printf(_("%-*s TTY      "), userlen, _("USER"));
