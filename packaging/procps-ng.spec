@@ -1,7 +1,7 @@
 %global tests_enabled 0
 
 Name:           procps-ng
-Version:        3.3.7
+Version:        3.3.9
 Release:        1
 License:        GPL-2.0 and LGPL-2.0+
 Summary:        System and process monitoring utilities
