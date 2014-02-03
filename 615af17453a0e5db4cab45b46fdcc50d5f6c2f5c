@@ -1,0 +1,7 @@
+Code-Review+2: Patrick McCarty <patrick.mccarty@linux.intel.com>
+Verified+1: Maciej Wereski <m.wereski@partner.samsung.com>
+Submitted-by: Lukasz Stelmach <l.stelmach@samsung.com>
+Submitted-at: Mon, 03 Feb 2014 05:22:07 -0800
+Reviewed-on: https://review.tizen.org/gerrit/15921
+Project: platform/upstream/procps-ng
+Branch: refs/heads/tizen
