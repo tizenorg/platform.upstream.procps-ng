@@ -65,24 +65,15 @@ System and process monitoring utilities development headers
 cp %{SOURCE1001} .
 
 %build
-%reconfigure
-./configure --prefix=/ \
-            --bindir=%{_bindir} \
-            --sbindir=%{_sbindir} \
-            --libdir=%{_libdir} \
-            --mandir=%{_mandir} \
-            --includedir=%{_includedir} \
-            --sysconfdir=%{_sysconfdir} \
-            --docdir=/unwanted \
-            --disable-static \
-            --disable-w-from \
-            --disable-kill \
-            --disable-rpath
-
+%reconfigure --prefix=/ \
+             --exec-prefix=/ \
+             --docdir=/unwanted \
+             --disable-static \
+             --disable-w-from \
+             --disable-kill \
+             --disable-rpath
 
 make CFLAGS="%{optflags}"
-
-
 
 %if %{tests_enabled}
 %check
