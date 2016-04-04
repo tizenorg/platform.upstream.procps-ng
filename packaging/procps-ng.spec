@@ -76,7 +76,7 @@ export CFLAGS+=" -fvisibility=hidden"
              --disable-kill \
              --disable-rpath
 
-make CFLAGS="%{optflags}"
+make CFLAGS="%{optflags} -fvisibility=hidden"
 
 %if %{tests_enabled}
 %check
