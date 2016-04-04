@@ -40,8 +40,8 @@ enum ns_type {
     UTSNS,
     NUM_NS         // total namespaces (fencepost)
 };
-extern const char *get_ns_name(int id);
-extern int get_ns_id(const char *name);
+__attribute__ ((visibility ("default"))) extern const char *get_ns_name(int id);
+__attribute__ ((visibility ("default"))) extern int get_ns_id(const char *name);
 
 // Basic data structure which holds all information we can get about a process.
 // (unless otherwise specified, fields are read from /proc/#/stat)
@@ -206,7 +206,7 @@ typedef struct PROCTAB {
 } PROCTAB;
 
 // Initialize a PROCTAB structure holding needed call-to-call persistent data
-extern PROCTAB* openproc(int flags, ... /* pid_t*|uid_t*|dev_t*|char* [, int n] */ );
+__attribute__ ((visibility ("default"))) extern PROCTAB* openproc(int flags, ... /* pid_t*|uid_t*|dev_t*|char* [, int n] */ );
 
 typedef struct proc_data_t {  // valued by: (else zero)
     proc_t **tab;             //     readproctab2, readproctab3
@@ -217,17 +217,17 @@ typedef struct proc_data_t {  // valued by: (else zero)
     int ntask;                //  *  readproctab2
 } proc_data_t;                //  *  when PROC_LOOSE_TASKS set
 
-extern proc_data_t *readproctab2(int(*want_proc)(proc_t *buf), int(*want_task)(proc_t *buf), PROCTAB *__restrict const PT);
-extern proc_data_t *readproctab3(int(*want_task)(proc_t *buf), PROCTAB *__restrict const PT);
+__attribute__ ((visibility ("default"))) extern proc_data_t *readproctab2(int(*want_proc)(proc_t *buf), int(*want_task)(proc_t *buf), PROCTAB *__restrict const PT);
+__attribute__ ((visibility ("default"))) extern proc_data_t *readproctab3(int(*want_task)(proc_t *buf), PROCTAB *__restrict const PT);
 
 // Convenient wrapper around openproc and readproc to slurp in the whole process
 // table subset satisfying the constraints of flags and the optional PID list.
 // Free allocated memory with exit().  Access via tab[N]->member.  The pointer
 // list is NULL terminated.
-extern proc_t** readproctab(int flags, ... /* same as openproc */ );
+__attribute__ ((visibility ("default"))) extern proc_t** readproctab(int flags, ... /* same as openproc */ );
 
 // Clean-up open files, etc from the openproc()
-extern void closeproc(PROCTAB* PT);
+__attribute__ ((visibility ("default"))) extern void closeproc(PROCTAB* PT);
 
 // Retrieve the next process or task matching the criteria set by the openproc().
 //
@@ -239,20 +239,20 @@ extern void closeproc(PROCTAB* PT);
 //       only before first use.  Thereafter, the library will manage such
 //       a passed proc_t, freeing any additional acquired memory associated
 //       with the previous process or thread.
-extern proc_t* readproc(PROCTAB *__restrict const PT, proc_t *__restrict p);
-extern proc_t* readtask(PROCTAB *__restrict const PT, const proc_t *__restrict const p, proc_t *__restrict t);
-extern proc_t* readeither(PROCTAB *__restrict const PT, proc_t *__restrict x);
+__attribute__ ((visibility ("default"))) extern proc_t* readproc(PROCTAB *__restrict const PT, proc_t *__restrict p);
+__attribute__ ((visibility ("default"))) extern proc_t* readtask(PROCTAB *__restrict const PT, const proc_t *__restrict const p, proc_t *__restrict t);
+__attribute__ ((visibility ("default"))) extern proc_t* readeither(PROCTAB *__restrict const PT, proc_t *__restrict x);
 
 // warning: interface may change
-extern int read_cmdline(char *__restrict const dst, unsigned sz, unsigned pid);
+__attribute__ ((visibility ("default"))) extern int read_cmdline(char *__restrict const dst, unsigned sz, unsigned pid);
 
-extern void look_up_our_self(proc_t *p);
+__attribute__ ((visibility ("default"))) extern void look_up_our_self(proc_t *p);
 
 // Deallocate space allocated by readproc
-extern void freeproc(proc_t* p);
+__attribute__ ((visibility ("default"))) extern void freeproc(proc_t* p);
 
 // Fill out a proc_t for a single task
-extern proc_t * get_proc_stats(pid_t pid, proc_t *p);
+__attribute__ ((visibility ("default"))) extern proc_t * get_proc_stats(pid_t pid, proc_t *p);
 
 // openproc/readproctab:
 //

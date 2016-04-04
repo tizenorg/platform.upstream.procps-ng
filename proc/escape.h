@@ -14,10 +14,10 @@ EXTERN_C_BEGIN
 #define ESC_BRACKETS 0x2  // if using cmd, put '[' and ']' around it
 #define ESC_DEFUNCT  0x4  // mark zombies with " <defunct>"
 
-extern int escape_strlist(char *__restrict dst, char *__restrict const *__restrict src, size_t n, int *cells);
-extern int escape_str(char *__restrict dst, const char *__restrict src, int bufsize, int *maxcells);
-extern int escape_command(char *__restrict const outbuf, const proc_t *__restrict const pp, int bytes, int *cells, unsigned flags);
-extern int escaped_copy(char *__restrict dst, const char *__restrict src, int bufsize, int *maxroom);
+__attribute__ ((visibility ("default"))) extern int escape_strlist(char *__restrict dst, char *__restrict const *__restrict src, size_t n, int *cells);
+__attribute__ ((visibility ("default"))) extern int escape_str(char *__restrict dst, const char *__restrict src, int bufsize, int *maxcells);
+__attribute__ ((visibility ("default"))) extern int escape_command(char *__restrict const outbuf, const proc_t *__restrict const pp, int bytes, int *cells, unsigned flags);
+__attribute__ ((visibility ("default"))) extern int escaped_copy(char *__restrict dst, const char *__restrict src, int bufsize, int *maxroom);
 
 EXTERN_C_END
 #endif

@@ -6,9 +6,9 @@
 
 EXTERN_C_BEGIN
 
-extern unsigned long long Hertz;   /* clock tick frequency */
-extern long smp_num_cpus;          /* number of CPUs */
-extern int have_privs;             /* boolean, true if setuid or similar */
+__attribute__ ((visibility ("default"))) extern unsigned long long Hertz;   /* clock tick frequency */
+__attribute__ ((visibility ("default"))) extern long smp_num_cpus;          /* number of CPUs */
+__attribute__ ((visibility ("default"))) extern int have_privs;             /* boolean, true if setuid or similar */
 
 #if 0
 #define JT double
@@ -16,81 +16,81 @@ extern void eight_cpu_numbers(JT *uret, JT *nret, JT *sret, JT *iret, JT *wret, 
 #undef JT
 #endif
 
-extern int        uptime (double *uptime_secs, double *idle_secs);
-extern unsigned long getbtime(void);
-extern void       loadavg(double *av1, double *av5, double *av15);
+__attribute__ ((visibility ("default"))) extern int        uptime (double *uptime_secs, double *idle_secs);
+__attribute__ ((visibility ("default"))) extern unsigned long getbtime(void);
+__attribute__ ((visibility ("default"))) extern void       loadavg(double *av1, double *av5, double *av15);
 
 
 /* obsolete */
-extern unsigned long kb_main_shared;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_shared;
 /* old but still kicking -- the important stuff */
-extern unsigned long kb_main_buffers;
-extern unsigned long kb_main_cached;
-extern unsigned long kb_main_free;
-extern unsigned long kb_main_total;
-extern unsigned long kb_swap_free;
-extern unsigned long kb_swap_total;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_buffers;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_cached;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_free;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_total;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_swap_free;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_swap_total;
 /* recently introduced */
-extern unsigned long kb_high_free;
-extern unsigned long kb_high_total;
-extern unsigned long kb_low_free;
-extern unsigned long kb_low_total;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_high_free;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_high_total;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_low_free;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_low_total;
 /* 2.4.xx era */
-extern unsigned long kb_active;
-extern unsigned long kb_inact_laundry;  // grrr...
-extern unsigned long kb_inact_dirty;
-extern unsigned long kb_inact_clean;
-extern unsigned long kb_inact_target;
-extern unsigned long kb_swap_cached;  /* late 2.4+ */
+__attribute__ ((visibility ("default"))) extern unsigned long kb_active;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_inact_laundry;  // grrr...
+__attribute__ ((visibility ("default"))) extern unsigned long kb_inact_dirty;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_inact_clean;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_inact_target;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_swap_cached;  /* late 2.4+ */
 /* derived values */
-extern unsigned long kb_swap_used;
-extern unsigned long kb_main_used;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_swap_used;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_main_used;
 /* 2.5.41+ */
-extern unsigned long kb_writeback;
-extern unsigned long kb_slab;
-extern unsigned long nr_reversemaps;
-extern unsigned long kb_committed_as;
-extern unsigned long kb_dirty;
-extern unsigned long kb_inactive;
-extern unsigned long kb_mapped;
-extern unsigned long kb_pagetables;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_writeback;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_slab;
+__attribute__ ((visibility ("default"))) extern unsigned long nr_reversemaps;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_committed_as;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_dirty;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_inactive;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_mapped;
+__attribute__ ((visibility ("default"))) extern unsigned long kb_pagetables;
 
 #define BUFFSIZE (64*1024)
 typedef unsigned long long jiff;
-extern void getstat(jiff *__restrict cuse, jiff *__restrict cice, jiff *__restrict csys, jiff *__restrict cide, jiff *__restrict ciow, jiff *__restrict cxxx, jiff *__restrict cyyy, jiff *__restrict czzz,
+__attribute__ ((visibility ("default"))) extern void getstat(jiff *__restrict cuse, jiff *__restrict cice, jiff *__restrict csys, jiff *__restrict cide, jiff *__restrict ciow, jiff *__restrict cxxx, jiff *__restrict cyyy, jiff *__restrict czzz,
 	     unsigned long *__restrict pin, unsigned long *__restrict pout, unsigned long *__restrict s_in, unsigned long *__restrict sout,
 	     unsigned *__restrict intr, unsigned *__restrict ctxt,
 	     unsigned int *__restrict running, unsigned int *__restrict blocked,
 	     unsigned int *__restrict btime, unsigned int *__restrict processes);
 
-extern void meminfo(void);
+__attribute__ ((visibility ("default"))) extern void meminfo(void);
 
 
-extern unsigned long vm_nr_dirty;
-extern unsigned long vm_nr_writeback;
-extern unsigned long vm_nr_pagecache;
-extern unsigned long vm_nr_page_table_pages;
-extern unsigned long vm_nr_reverse_maps;
-extern unsigned long vm_nr_mapped;
-extern unsigned long vm_nr_slab;
-extern unsigned long vm_pgpgin;
-extern unsigned long vm_pgpgout;
-extern unsigned long vm_pswpin;
-extern unsigned long vm_pswpout;
-extern unsigned long vm_pgalloc;
-extern unsigned long vm_pgfree;
-extern unsigned long vm_pgactivate;
-extern unsigned long vm_pgdeactivate;
-extern unsigned long vm_pgfault;
-extern unsigned long vm_pgmajfault;
-extern unsigned long vm_pgscan;
-extern unsigned long vm_pgrefill;
-extern unsigned long vm_pgsteal;
-extern unsigned long vm_kswapd_steal;
-extern unsigned long vm_pageoutrun;
-extern unsigned long vm_allocstall;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_dirty;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_writeback;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_pagecache;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_page_table_pages;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_reverse_maps;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_mapped;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_nr_slab;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgpgin;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgpgout;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pswpin;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pswpout;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgalloc;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgfree;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgactivate;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgdeactivate;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgfault;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgmajfault;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgscan;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgrefill;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pgsteal;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_kswapd_steal;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_pageoutrun;
+__attribute__ ((visibility ("default"))) extern unsigned long vm_allocstall;
 
-extern void vminfo(void);
+__attribute__ ((visibility ("default"))) extern void vminfo(void);
 
 typedef struct disk_stat{
 	unsigned long long reads_sectors;
@@ -117,8 +117,8 @@ typedef struct partition_stat{
 	unsigned long long requested_writes;
 }partition_stat;
 
-extern unsigned int getpartitions_num(struct disk_stat *disks, int ndisks);
-extern unsigned int getdiskstat (struct disk_stat**,struct partition_stat**);
+__attribute__ ((visibility ("default"))) extern unsigned int getpartitions_num(struct disk_stat *disks, int ndisks);
+__attribute__ ((visibility ("default"))) extern unsigned int getdiskstat (struct disk_stat**,struct partition_stat**);
 
 typedef struct slab_cache{
 	char name[48];
@@ -128,11 +128,11 @@ typedef struct slab_cache{
 	unsigned objperslab;
 }slab_cache;
 
-extern unsigned int getslabinfo (struct slab_cache**);
+__attribute__ ((visibility ("default"))) extern unsigned int getslabinfo (struct slab_cache**);
 
-extern unsigned get_pid_digits(void) FUNCTION;
+__attribute__ ((visibility ("default"))) extern unsigned get_pid_digits(void) FUNCTION;
 
-extern void cpuinfo (void);
+__attribute__ ((visibility ("default"))) extern void cpuinfo (void);
 
 EXTERN_C_END
 #endif /* SYSINFO_H */

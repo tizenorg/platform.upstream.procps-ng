@@ -32,8 +32,8 @@ struct slab_stat {
 	unsigned max_obj_size;          /* size of largest object */
 };
 
-extern void put_slabinfo(struct slab_info *);
-extern void free_slabinfo(struct slab_info *);
-extern int get_slabinfo(struct slab_info **, struct slab_stat *);
+__attribute__ ((visibility ("default"))) extern void put_slabinfo(struct slab_info *);
+__attribute__ ((visibility ("default"))) extern void free_slabinfo(struct slab_info *);
+__attribute__ ((visibility ("default"))) extern int get_slabinfo(struct slab_info **, struct slab_stat *);
 
 #endif /* _PROC_SLAB_H */

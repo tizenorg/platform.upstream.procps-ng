@@ -5,9 +5,9 @@
 
 EXTERN_C_BEGIN
 
-extern const char * lookup_wchan(unsigned KLONG address, unsigned pid);
-extern int   open_psdb(const char *__restrict override);
-extern int   open_psdb_message(const char *__restrict override, message_fn message);
+__attribute__ ((visibility ("default"))) extern const char * lookup_wchan(unsigned KLONG address, unsigned pid);
+__attribute__ ((visibility ("default"))) extern int   open_psdb(const char *__restrict override);
+__attribute__ ((visibility ("default"))) extern int   open_psdb_message(const char *__restrict override, message_fn message);
 
 EXTERN_C_END
 
