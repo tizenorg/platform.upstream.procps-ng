@@ -71,7 +71,8 @@ cp %{SOURCE1001} .
              --disable-static \
              --disable-w-from \
              --disable-kill \
-             --disable-rpath
+             --disable-rpath \
+			 ac_cv_search_dlopen='-ldl'
 
 make CFLAGS="%{optflags}"
 
